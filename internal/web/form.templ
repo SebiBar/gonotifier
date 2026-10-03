@@ -1,0 +1,145 @@
+package web
+
+// Form is the add/edit dialog content. Reminder chips and the priority/repeat
+// pickers are plain checkboxes and radios (styled in app.css), so the browser
+// submits them without any JavaScript. Alpine.js only toggles visibility.
+templ Form(fd formData) {
+	<form
+		if fd.Mode == "edit" {
+			hx-put={ "/events/" + fd.ID }
+		} else {
+			hx-post="/events"
+		}
+		hx-target="#event-list"
+		hx-swap="innerHTML"
+		hx-disabled-elt="find button[type=submit]"
+		x-data={ fd.alpineState() }
+	>
+		<div class="modal-head">
+			<h3 class="modal-title">
+				if fd.Mode == "edit" {
+					Edit event
+				} else {
+					New event
+				}
+			</h3>
+			<button type="button" class="icon-btn" aria-label="Close" onclick="this.closest('dialog').close()">
+				@Icon("x")
+			</button>
+		</div>
+		<div class="modal-body">
+			if len(fd.Errors) > 0 {
+				<div class="form-errors" role="alert">
+					@Icon("alert")
+					<div>
+						for _, e := range fd.Errors {
+							<p>{ e }</p>
+						}
+					</div>
+				</div>
+			}
+			<label class="field">
+				<span class="field-label">Name</span>
+				<input type="text" name="name" placeholder="e.g. Dentist appointment" required maxlength="100" value={ fd.Event.Name } autocomplete="off" autofocus/>
+			</label>
+			<div class="row2 field">
+				<label class="field">
+					<span class="field-label">Date</span>
+					<input type="date" name="date" value={ fd.Date } required/>
+				</label>
+				<label class="field">
+					<span class="field-label">Time <span class="muted">(optional)</span></span>
+					<input type="time" name="time" value={ fd.Time }/>
+				</label>
+			</div>
+			<p class="hint hint-tight">Leave the time empty for an all-day event.</p>
+			<div class="field">
+				<span class="field-label">Repeat</span>
+				<div class="segmented" role="radiogroup" aria-label="Repeat">
+					for _, o := range repeatOptions {
+						<label><input type="radio" name="repeat" value={ o.Value } x-model="repeat"/>{ o.Label }</label>
+					}
+				</div>
+			</div>
+			<div
+				class="row2 field"
+				x-show="repeat !== ''"
+				x-cloak
+				x-transition:enter="fade-enter"
+				x-transition:enter-start="fade-from"
+				x-transition:enter-end="fade-to"
+			>
+				<label class="field">
+					<span class="field-label">Every</span>
+					<div class="input-suffix">
+						<input type="number" name="every" min="1" max="1000" placeholder="1" x-model="every"/>
+						<span x-text="{daily: 'days', weekly: 'weeks', monthly: 'months', yearly: 'years'}[repeat]"></span>
+					</div>
+				</label>
+				<label class="field">
+					<span class="field-label">Until <span class="muted">(optional)</span></span>
+					<input type="date" name="until" x-model="until"/>
+				</label>
+			</div>
+			<div class="field">
+				<span class="field-label">Remind me before</span>
+				<div class="chip-group">
+					for _, c := range chipOffsets {
+						<label class="chip-toggle"><input type="checkbox" name="reminders" value={ c.Value } checked?={ fd.isSelected(c.Value) }/>{ c.Label }</label>
+					}
+				</div>
+				<input type="text" name="custom_reminders" placeholder="Other offsets, e.g. 10d, 2h, 45m" value={ fd.CustomReminders } aria-label="Other reminder offsets" autocomplete="off"/>
+			</div>
+			<button type="button" class="disclosure" :class="more && 'open'" @click="more = !more" :aria-expanded="more">
+				<span>More options</span>
+				@Icon("chevron")
+			</button>
+			<div
+				class="more"
+				x-show="more"
+				x-cloak
+				x-transition:enter="fade-enter"
+				x-transition:enter-start="fade-from"
+				x-transition:enter-end="fade-to"
+			>
+				<label class="switch-row" x-show="repeat === '' || until">
+					<input type="checkbox" role="switch" name="auto_remove" checked?={ fd.AutoRemove }/>
+					<span>Remove automatically once it has finished</span>
+				</label>
+				<div class="field">
+					<span class="field-label">Priority</span>
+					<div class="segmented">
+						for _, o := range priorityOptions {
+							<label><input type="radio" name="priority" value={ o.Value } checked?={ fd.Priority == o.Value }/>{ o.Label }</label>
+						}
+					</div>
+				</div>
+				<label class="field">
+					<span class="field-label">Day reminders arrive at</span>
+					<input type="time" name="notify_time" value={ fd.Event.NotifyTime }/>
+					<span class="hint">Leave empty for the default ({ fd.DefaultNotifyTime }).</span>
+				</label>
+				<div class="row2">
+					<label class="field">
+						<span class="field-label">ntfy topic</span>
+						<input type="text" name="topic" value={ fd.Event.Topic } placeholder={ fd.DefaultTopic } autocomplete="off"/>
+					</label>
+					<label class="field">
+						<span class="field-label">ntfy tags</span>
+						<input type="text" name="tags" value={ fd.Event.Tags } placeholder="automatic" autocomplete="off"/>
+					</label>
+				</div>
+			</div>
+		</div>
+		<div class="modal-foot">
+			<button type="button" class="btn btn-ghost" onclick="this.closest('dialog').close()">Cancel</button>
+			<button type="submit" class="btn btn-primary">
+				if fd.Mode == "edit" {
+					Save changes
+				} else {
+					Create event
+				}
+			</button>
+		</div>
+	</form>
+}

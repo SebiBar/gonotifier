@@ -1,0 +1,13 @@
+# Build output
+/gonotifier
+/gonotifier.exe
+
+# Local runtime data
+*.db
+*.db-wal
+*.db-shm
+/data/
+.events-*.yaml.tmp
+
+# Secrets
+.env

@@ -1,0 +1,7 @@
+.git
+.github
+.env
+*.db*
+/data
+*.md
+scripts

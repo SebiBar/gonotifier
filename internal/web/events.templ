@@ -1,0 +1,96 @@
+package web
+
+import "strconv"
+
+// EventList is the content of #event-list (the htmx swap target for add/edit).
+templ EventList(p pageData) {
+	for _, v := range p.Events {
+		@eventRow(v, v.ID == p.Highlight)
+	}
+}
+
+templ eventRow(v EventView, highlight bool) {
+	<div class={ "event-row", templ.KV("flash", highlight) } id={ "event-" + v.ID }>
+		<div class="ev-main">
+			<div class="ev-name">
+				<span class="truncate">{ v.Name }</span>
+				if v.Priority == "high" || v.Priority == "urgent" {
+					<span class={ "badge", "badge-" + v.Priority }>{ v.Priority }</span>
+				}
+			</div>
+			<div class="ev-meta">
+				@Icon(v.TypeIcon)
+				<span>{ v.DateDisplay }</span>
+				<span class="sep">·</span>
+				<span>{ v.TypeLabel }</span>
+				if v.KeptAfter {
+					<span class="sep">·</span>
+					<span>Kept after it ends</span>
+				}
+				<span class="sep mobile">·</span>
+				<span class={ "mobile", templ.KV("soon", v.Soon) }>{ v.Next }</span>
+			</div>
+		</div>
+		<div class="ev-reminders">
+			for _, r := range v.Reminders {
+				<span class="chip">{ r }</span>
+			}
+		</div>
+		<div class={ "ev-next", templ.KV("soon", v.Soon) }>{ v.Next }</div>
+		<div class="ev-actions">
+			<button
+				type="button"
+				class="icon-btn"
+				title="Edit"
+				aria-label={ "Edit " + v.Name }
+				hx-get={ "/events/" + v.ID + "/edit" }
+				hx-target="#dialog-content"
+			>
+				@Icon("pencil")
+			</button>
+			<button
+				type="button"
+				class="icon-btn danger"
+				title="Delete"
+				aria-label={ "Delete " + v.Name }
+				hx-delete={ "/events/" + v.ID }
+				hx-target="closest .event-row"
+				hx-swap="outerHTML swap:200ms"
+				hx-confirm={ "“" + v.Name + "” and its reminders will be removed. This can't be undone." }
+			>
+				@Icon("trash")
+			</button>
+		</div>
+	</div>
+}
+
+// Upcoming is the content of #upcoming: next occurrences within 30 days.
+templ Upcoming(p pageData) {
+	if len(p.Upcoming) > 0 {
+		<ul class="list">
+			for _, u := range p.Upcoming {
+				<li>
+					<div class="datebox"><span class="mon">{ u.Month }</span><span class="day">{ u.Day }</span></div>
+					<div class="grow">
+						<div class="item-title truncate">{ u.EventName }</div>
+						<div class="muted small">{ u.Weekday } · { u.Detail }</div>
+					</div>
+					<span class={ "rel", templ.KV("soon", u.Soon) }>{ u.RelativeTime }</span>
+				</li>
+			}
+		</ul>
+	} else {
+		<div class="empty empty-static">
+			@Icon("calendar")
+			<p>Nothing in the next 30 days</p>
+		</div>
+	}
+}
+
+// ListOOB refreshes the event count and "Upcoming" out-of-band after a change.
+templ ListOOB(p pageData) {
+	<span class="count" id="events-count" hx-swap-oob="true">{ strconv.Itoa(len(p.Events)) }</span>
+	<div id="upcoming" hx-swap-oob="innerHTML">
+		@Upcoming(p)
+	</div>
+}
