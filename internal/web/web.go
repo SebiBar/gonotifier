@@ -3,6 +3,7 @@
 // Layout:
 //
 //	web.go       routing, static assets, rendering helpers, feed + health
+//	auth.go      login (checked by ntfy), sessions, API authentication
 //	ui.go        htmx dashboard and add/edit/delete handlers
 //	views.go     view models the components render
 //	api.go       JSON API (CRUD, import/export) for scripts, other containers and AI tools
@@ -15,19 +16,21 @@ package web
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/subtle"
 	"embed"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
 
 	"github.com/sebibar/gonotifier/internal/config"
 	"github.com/sebibar/gonotifier/internal/ical"
+	"github.com/sebibar/gonotifier/internal/notify"
 	"github.com/sebibar/gonotifier/internal/store"
 )
 
@@ -63,30 +66,39 @@ type server struct {
 	cfg   *config.Config
 	store *store.Store
 	sched Scheduler
+	ntfy  notify.Ntfy // checks logins
+	auth  *auth
 }
 
-// Register sets up all routes (UI, API, feed, health, static files) on the mux.
-func Register(mux *http.ServeMux, cfg *config.Config, st *store.Store, sched Scheduler) {
-	s := &server{cfg: cfg, store: st, sched: sched}
+// Handler returns the whole web app: UI, API, feed, health and static files.
+// Everything except the login page, the feed, health and static files needs a logged-in user.
+func Handler(cfg *config.Config, st *store.Store, sched Scheduler) http.Handler {
+	s := &server{cfg: cfg, store: st, sched: sched, ntfy: notify.Ntfy{URL: cfg.NtfyURL}, auth: newAuth()}
+	mux := http.NewServeMux()
+	ui, api := s.requireUser, s.requireAPIUser
 
-	mux.HandleFunc("GET /{$}", s.dashboard)
-	mux.HandleFunc("GET /events/new", s.newForm)
-	mux.HandleFunc("GET /events/{id}/edit", s.editForm)
-	mux.HandleFunc("POST /events", s.createEvent)
-	mux.HandleFunc("PUT /events/{id}", s.updateEvent)
-	mux.HandleFunc("DELETE /events/{id}", s.deleteEvent)
+	mux.HandleFunc("GET /login", s.loginPage)
+	mux.HandleFunc("POST /login", s.login)
+	mux.HandleFunc("POST /logout", s.logout)
 
-	mux.HandleFunc("GET /api/events", s.apiListEvents)
-	mux.HandleFunc("POST /api/events", s.apiCreateEvent)
-	mux.HandleFunc("GET /api/events/{id}", s.apiGetEvent)
-	mux.HandleFunc("PUT /api/events/{id}", s.apiUpdateEvent)
-	mux.HandleFunc("DELETE /api/events/{id}", s.apiDeleteEvent)
-	mux.HandleFunc("GET /api/export", s.apiExport)
-	mux.HandleFunc("POST /api/import", s.apiImport)
+	mux.HandleFunc("GET /{$}", ui(s.dashboard))
+	mux.HandleFunc("GET /events/new", ui(s.newForm))
+	mux.HandleFunc("GET /events/{id}/edit", ui(s.editForm))
+	mux.HandleFunc("POST /events", ui(s.createEvent))
+	mux.HandleFunc("PUT /events/{id}", ui(s.updateEvent))
+	mux.HandleFunc("DELETE /events/{id}", ui(s.deleteEvent))
+	mux.HandleFunc("POST /feed/reset", ui(s.resetFeed))
+
+	mux.HandleFunc("GET /api/events", api(s.apiListEvents))
+	mux.HandleFunc("POST /api/events", api(s.apiCreateEvent))
+	mux.HandleFunc("GET /api/events/{id}", api(s.apiGetEvent))
+	mux.HandleFunc("PUT /api/events/{id}", api(s.apiUpdateEvent))
+	mux.HandleFunc("DELETE /api/events/{id}", api(s.apiDeleteEvent))
+	mux.HandleFunc("GET /api/export", api(s.apiExport))
+	mux.HandleFunc("POST /api/import", api(s.apiImport))
 	mux.HandleFunc("GET /api/health", s.health)
 
-	mux.HandleFunc("GET /feed.ics", s.feed)
-	mux.HandleFunc("GET /feed/{file}", s.feed) // /feed/<FEED_TOKEN>.ics
+	mux.HandleFunc("GET /feed/{file}", s.feed) // /feed/<user's feed token>.ics
 	mux.HandleFunc("GET /health", s.health)
 
 	static := http.FileServerFS(staticFS)
@@ -98,6 +110,19 @@ func Register(mux *http.ServeMux, cfg *config.Config, st *store.Store, sched Sch
 		}
 		static.ServeHTTP(w, r)
 	}))
+
+	// Rejects form posts and API calls a browser makes on behalf of another website (CSRF).
+	return securityHeaders(http.NewCrossOriginProtection().Handler(mux))
+}
+
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin") // the feed URL is a secret
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ---------- rendering helpers ----------
@@ -135,14 +160,26 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // ---------- feed + health ----------
 
-// feed serves the iCal feed, but only at cfg.FeedPath(): with FEED_TOKEN set,
-// /feed.ics and wrong tokens get a 404, so the URL itself is the secret.
+// feedPath is where a user's calendar feed is served. The URL itself is the secret:
+// calendar apps fetch it without logging in.
+func feedPath(token string) string { return "/feed/" + token + ".ics" }
+
+// feed serves the iCal feed of the user whose feed token is in the URL; anything else is a 404.
 func (s *server) feed(w http.ResponseWriter, r *http.Request) {
-	if subtle.ConstantTimeCompare([]byte(r.URL.Path), []byte(s.cfg.FeedPath())) != 1 {
+	token, ok := strings.CutSuffix(r.PathValue("file"), ".ics")
+	if !ok || token == "" {
 		http.NotFound(w, r)
 		return
 	}
-	evs, err := s.store.ListEvents()
+	u, err := s.store.UserByFeedToken(token)
+	if errors.Is(err, store.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	} else if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	evs, err := s.store.ListEvents(u.Username)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -155,7 +192,7 @@ func (s *server) feed(w http.ResponseWriter, r *http.Request) {
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	resp := map[string]any{"status": "ok", "events": 0, "last_check": nil, "next_reminder": nil}
 	status := http.StatusOK
-	if evs, err := s.store.ListEvents(); err != nil {
+	if evs, err := s.store.AllEvents(); err != nil {
 		resp["status"], resp["error"] = "error", err.Error()
 		status = http.StatusServiceUnavailable
 	} else {

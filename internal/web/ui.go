@@ -11,6 +11,7 @@ import (
 	"github.com/a-h/templ"
 
 	"github.com/sebibar/gonotifier/internal/events"
+	"github.com/sebibar/gonotifier/internal/notify"
 	"github.com/sebibar/gonotifier/internal/store"
 )
 
@@ -57,7 +58,7 @@ func (fd formData) alpineState() string {
 
 // renderList returns the event list plus out-of-band refreshes of the count and "Upcoming".
 func (s *server) renderList(w http.ResponseWriter, r *http.Request, highlight string) {
-	p, err := s.page(false)
+	p, err := s.page(userOf(r), false)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -74,7 +75,7 @@ func renderForm(w http.ResponseWriter, r *http.Request, fd formData) {
 }
 
 func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
-	p, err := s.page(true)
+	p, err := s.page(userOf(r), true)
 	if err != nil {
 		http.Error(w, "failed to load events: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -82,11 +83,11 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 	render(w, r, http.StatusOK, Page(p))
 }
 
-func (s *server) newFormData() formData {
+func (s *server) newFormData(user string) formData {
 	return formData{
 		Mode: "new", AutoRemove: true, Priority: "default",
 		DefaultNotifyTime: s.cfg.DefaultNotifyTime.String(),
-		DefaultTopic:      s.cfg.NtfyDefaultTopic,
+		DefaultTopic:      notify.DefaultTopic(user),
 	}
 }
 
@@ -118,11 +119,11 @@ func fillForm(fd *formData, e events.Event) {
 }
 
 func (s *server) newForm(w http.ResponseWriter, r *http.Request) {
-	renderForm(w, r, s.newFormData())
+	renderForm(w, r, s.newFormData(userOf(r)))
 }
 
 func (s *server) editForm(w http.ResponseWriter, r *http.Request) {
-	e, err := s.store.GetEvent(r.PathValue("id"))
+	e, err := s.store.GetEvent(userOf(r), r.PathValue("id"))
 	if errors.Is(err, store.ErrNotFound) {
 		http.Error(w, "event not found", http.StatusNotFound)
 		return
@@ -130,7 +131,7 @@ func (s *server) editForm(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	fd := s.newFormData()
+	fd := s.newFormData(userOf(r))
 	fd.Mode, fd.ID = "edit", e.ID
 	fillForm(&fd, e)
 	renderForm(w, r, fd)
@@ -172,19 +173,20 @@ func (s *server) submitForm(w http.ResponseWriter, r *http.Request, editID strin
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	user := userOf(r)
 	e := eventFromForm(r)
 	var saved events.Event
 	var err error
 	if editID == "" {
-		saved, err = s.store.CreateEvent(e)
+		saved, err = s.store.CreateEvent(user, e)
 	} else {
-		saved, err = s.store.UpdateEvent(editID, e)
+		saved, err = s.store.UpdateEvent(user, editID, e)
 	}
 
 	var verrs events.ValidationError
 	switch {
 	case errors.As(err, &verrs):
-		fd := s.newFormData()
+		fd := s.newFormData(user)
 		if editID != "" {
 			fd.Mode, fd.ID = "edit", editID
 		}
@@ -221,7 +223,7 @@ func (s *server) updateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) deleteEvent(w http.ResponseWriter, r *http.Request) {
-	err := s.store.DeleteEvent(r.PathValue("id"))
+	err := s.store.DeleteEvent(userOf(r), r.PathValue("id"))
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		// Already gone — let the row fade out anyway.
@@ -238,10 +240,24 @@ func (s *server) deleteEvent(w http.ResponseWriter, r *http.Request) {
 	s.sched.Wake()
 	setTrigger(w, false, "Event deleted", "success")
 	// Empty main body removes the row; the count and "Upcoming" refresh out-of-band.
-	p, err := s.page(false)
+	p, err := s.page(userOf(r), false)
 	if err != nil {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
 	render(w, r, http.StatusOK, ListOOB(p))
+}
+
+// resetFeed gives the user a new calendar feed URL; the old one stops working.
+func (s *server) resetFeed(w http.ResponseWriter, r *http.Request) {
+	token, err := s.store.ResetFeedToken(userOf(r))
+	if err != nil {
+		slog.Error("reset feed", "err", err)
+		w.Header().Set("HX-Reswap", "none")
+		setTrigger(w, false, "Failed to reset the link: "+err.Error(), "error")
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	setTrigger(w, false, "New calendar link created", "success")
+	render(w, r, http.StatusOK, FeedLink(feedPath(token)))
 }

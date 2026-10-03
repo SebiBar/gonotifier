@@ -33,6 +33,7 @@ type Event struct {
 	Topic      string   `json:"topic,omitempty"`
 	Priority   string   `json:"priority,omitempty"`
 	Tags       string   `json:"tags,omitempty"`
+	Owner      string   `json:"-"` // username; set by the store, never taken from input
 }
 
 var (

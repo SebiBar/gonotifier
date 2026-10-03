@@ -5,6 +5,7 @@ choose how long before each one you want to be reminded, and gonotifier sends pu
 notifications to your devices through [ntfy](https://ntfy.sh).
 
 - **Web UI** to add, edit and delete events (works on mobile, light and dark mode)
+- **Several users**, each with their own events and reminders, logging in with their ntfy account
 - **One-time or repeating events**: daily, weekly, monthly or yearly, every N, optionally until a date
 - **Several reminders per event**, e.g. 7 days, 1 day and 1 hour before
 - **On time**: each reminder is sent the moment it's due, and missed ones are caught up after downtime
@@ -14,28 +15,17 @@ notifications to your devices through [ntfy](https://ntfy.sh).
 
 ## Quick start
 
-gonotifier sends notifications through an [ntfy](https://docs.ntfy.sh/) server, so you need one it can reach.
-
-```bash
-docker run -d --name gonotifier -p 8080:8080 \
-  -e NTFY_URL=https://ntfy.example.com \
-  -e TZ=America/New_York \
-  -v gonotifier-data:/data \
-  ghcr.io/sebibar/gonotifier:latest
-```
-
-Open http://localhost:8080 and click **New event**.
-
-## Docker Compose
+gonotifier sends notifications through an [ntfy](https://docs.ntfy.sh/) server, and its users are
+that server's users: you log in with your ntfy username and password. So you need an ntfy server
+with [access control](https://docs.ntfy.sh/config/#access-control) and at least one user.
 
 ```yaml
 services:
   gonotifier:
-    image: ghcr.io/sebibar/gonotifier:latest   # or pin a release, e.g. :1.0.0
+    image: ghcr.io/sebibar/gonotifier:latest   # or pin a release, e.g. :0.2
     restart: unless-stopped
     environment:
       NTFY_URL: http://ntfy:80
-      NTFY_TOKEN: ${NTFY_TOKEN}                # only if your ntfy server requires auth
       TZ: America/New_York
     volumes:
       - ./data:/data                           # your events — back this up
@@ -43,21 +33,24 @@ services:
       - "8080:8080"                            # leave out if a reverse proxy fronts it
 ```
 
+Open http://localhost:8080, log in with your ntfy account and click **New event**.
+
+On your first login gonotifier creates an ntfy token for you (labelled `gonotifier`), and sends
+your reminders with it. By default they go to the topic `<username>_reminders`, so give each user
+write access to their own topics, e.g. `ntfy access alice 'alice_*' rw`.
+
 ## Configuration
 
 All settings are environment variables. Only `NTFY_URL` is required.
 
 | Variable | Default | Description |
 |---|---|---|
-| `NTFY_URL` | **required** | ntfy server URL, e.g. `http://ntfy:80` |
-| `NTFY_TOKEN` | — | ntfy access token, if your server requires auth |
-| `NTFY_DEFAULT_TOPIC` | `reminders` | Topic used when an event doesn't set its own |
+| `NTFY_URL` | **required** | ntfy server URL, e.g. `http://ntfy:80`. Logins are checked there too |
 | `TZ` | `UTC` | Your timezone, e.g. `America/New_York` |
 | `DEFAULT_NOTIFY_TIME` | `09:00` | When day-based reminders fire |
 | `CATCHUP_WINDOW` | `24h` | How late a missed reminder may still be sent |
 | `DB_PATH` | `/data/gonotifier.db` | SQLite database (events and sent reminders) |
-| `EXPORT_FILE` | `events-export.json` next to the database | Read-only JSON copy of all events; `off` disables it |
-| `FEED_TOKEN` | — | Serve the calendar feed only at `/feed/<token>.ics` (16+ characters of `A-Z a-z 0-9 - _`) |
+| `EXPORT_DIR` | `exports` next to the database | Read-only JSON copy of each user's events, `<username>.json`; `off` disables it |
 | `PORT` | `8080` | HTTP port |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
 
@@ -72,7 +65,7 @@ All settings are environment variables. Only `NTFY_URL` is required.
 | `every` | | Repeat interval: `every: 3` with `monthly` means every 3 months |
 | `until` | | Last date (`YYYY-MM-DD`) a repeat may fall on |
 | `notify_time` | | When day-based reminders fire for this event, e.g. `08:00` |
-| `topic` | | ntfy topic for this event (default `NTFY_DEFAULT_TOPIC`) |
+| `topic` | | ntfy topic for this event (default `<username>_reminders`). Shared topics work too, e.g. `family_reminders` |
 | `priority` | | `min`, `low`, `default`, `high` or `urgent` |
 | `tags` | | ntfy tags, comma-separated (replaces the automatic ones) |
 | `auto_remove` | | `false` keeps the event after it has finished (default `true`) |
@@ -89,21 +82,23 @@ date) is deleted once all its reminders have been sent.
 ## API
 
 Other services can manage events over HTTP, using the fields above plus a server-assigned `id`.
+Requests are made as a user, with the same credentials ntfy accepts: an ntfy access token
+(`Authorization: Bearer tk_…`) or the username and password. Each user only sees their own events.
 
 | Method | Path | Description |
 |---|---|---|
-| `GET` | `/api/events` | List events, each with its `id` and `next` occurrence |
+| `GET` | `/api/events` | List your events, each with its `id` and `next` occurrence |
 | `POST` | `/api/events` | Create an event; returns `201`, or `400` with validation errors |
 | `GET` | `/api/events/{id}` | Get one event |
 | `PUT` | `/api/events/{id}` | Replace an event (keeps its `id`) |
 | `DELETE` | `/api/events/{id}` | Delete an event; returns `204`, or `404` |
-| `GET` | `/api/export` | All events as `{"events": [...]}` |
+| `GET` | `/api/export` | All your events as `{"events": [...]}` |
 | `POST` | `/api/import` | Add or update events from an export (or a list of events) |
-| `GET` | `/health` | `{"status":"ok","events":N,"last_check":"…","next_reminder":"…"}` |
+| `GET` | `/health` | `{"status":"ok","events":N,"last_check":"…","next_reminder":"…"}` (no login needed) |
 
 ```bash
 curl -X POST http://gonotifier:8080/api/events \
-  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer tk_..." -H "Content-Type: application/json" \
   -d '{"name":"Server maintenance","date":"2026-12-15T02:00","reminders":["1d","1h"]}'
 ```
 
@@ -111,38 +106,47 @@ curl -X POST http://gonotifier:8080/api/events \
 `?mode=replace` to also delete events missing from the file. If any event is invalid, nothing changes.
 
 ```bash
-curl http://gonotifier:8080/api/export > events.json
-curl --data-binary @events.json http://gonotifier:8080/api/import
+curl -u alice http://gonotifier:8080/api/export > events.json
+curl -u alice --data-binary @events.json http://gonotifier:8080/api/import
 ```
 
 ## Calendar feed
 
-The feed lists every event with its repeats and reminders, at `/feed.ics`. Anyone who can reach that
-URL can read your event names, so if the feed is reachable from the internet, set a secret token:
+Each user has a calendar feed with all their events, repeats and reminders, at a secret URL:
+the **Calendar feed** link in the web UI. Calendar apps fetch it without logging in, so the URL is
+the password: anyone who has it can read your event names. If it leaks, replace it with the button
+next to the link (calendars subscribed to the old one then need the new one).
 
-```bash
-openssl rand -hex 24          # use the output as FEED_TOKEN
-```
-
-The feed then lives at `/feed/<token>.ics`, and `/feed.ics` returns 404. The **Calendar feed** link
-in the web UI always points to the right URL.
-
-To subscribe in Google Calendar: **Settings → Add calendar → From URL**, and paste
-`https://<your-gonotifier-host>` followed by the feed path. The URL must be reachable from the
-internet; Google refreshes it every 12–24 hours.
+To subscribe in Google Calendar: **Settings → Add calendar → From URL**, and paste the link. The URL
+must be reachable from the internet; Google refreshes it every 12–24 hours.
 
 ## Data and backups
 
-Everything lives in `/data`: `gonotifier.db` holds your events, and `events-export.json` is a readable
-copy rewritten on every change. Back up the export file (copying the database while the app runs can
-catch it mid-write); restore it with the import command above. Mount a **directory** at `/data`, not
-a single file.
+Everything lives in `/data`: `gonotifier.db` holds users, events and sent reminders, and
+`exports/<username>.json` is a readable copy of each user's events, rewritten on every change.
+Back up the database while gonotifier is stopped, or the export files any time (copying the
+database while the app runs can catch it mid-write). A user restores their file with the import
+command above. Mount a **directory** at `/data`, not a single file.
 
 ## Security
 
-gonotifier has **no login**, and neither does its API. Keep it on a private network or behind a
-reverse proxy with authentication. Only the calendar feed needs to be public, if a calendar service
-fetches it; set `FEED_TOKEN` and expose just the `/feed/` path.
+- **Logins** are checked by ntfy; gonotifier stores no passwords. A username is locked for 15 minutes
+  after 5 wrong passwords. Sessions last 30 days and are renewed while in use; once a day they check
+  with ntfy that the user still exists.
+- **The first user to log in** takes over events created before gonotifier had users (version 0.1).
+- **Anyone with an ntfy account** on the server can log in. Each user only sees and changes their own
+  events, and their reminders are sent with their own ntfy token, so ntfy's access rules decide which
+  topics they can post to.
+- **Exposing it to the internet:** only the calendar feed needs to be public, if a calendar service
+  fetches it. Expose just the `/feed/` path and keep the rest on your network or VPN.
+
+## Upgrading from 0.1
+
+`NTFY_TOKEN`, `NTFY_DEFAULT_TOPIC`, `FEED_TOKEN` and `EXPORT_FILE` are gone (a warning is logged if
+they're still set). After upgrading, log in once soon: until the first user logs in and takes over
+the existing events, their reminders aren't sent. Then subscribe to `<username>_reminders` in the ntfy
+app (or set the old topic on your events), and replace the calendar feed URL in your calendar apps.
+The old `events-export.json` is no longer updated and can be deleted.
 
 ## Development
 

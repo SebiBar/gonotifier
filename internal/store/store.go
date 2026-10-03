@@ -1,5 +1,6 @@
 // Package store keeps all persistent data in one SQLite database:
-// the events and the log of reminders already sent.
+// users and their sessions, the events, and the log of reminders already sent.
+// Events and sent reminders belong to a user (owner); every query is scoped by owner.
 package store
 
 import (
@@ -47,6 +48,24 @@ var migrations = []string{
 	);
 	CREATE INDEX idx_sent_event ON sent(event_id, target_date);
 	CREATE INDEX idx_sent_at ON sent(sent_at);`,
+
+	// 2: users (logins come from ntfy), sessions, and an owner on events and sent reminders.
+	// Rows from before this migration have owner '' until the first user claims them (CreateUser).
+	`CREATE TABLE users (
+		username   TEXT PRIMARY KEY,           -- ntfy username
+		ntfy_token TEXT NOT NULL,              -- the user's ntfy token, used to send their reminders
+		feed_token TEXT NOT NULL UNIQUE,       -- secret part of the calendar feed URL
+		created_at TEXT NOT NULL
+	);
+	CREATE TABLE sessions (
+		id         TEXT PRIMARY KEY,           -- sha256 of the session cookie
+		username   TEXT NOT NULL,
+		expires_at TEXT NOT NULL
+	);
+	ALTER TABLE events ADD COLUMN owner TEXT NOT NULL DEFAULT '';
+	ALTER TABLE sent ADD COLUMN owner TEXT NOT NULL DEFAULT '';
+	CREATE INDEX idx_events_owner ON events(owner);
+	CREATE INDEX idx_sent_owner ON sent(owner, sent_at);`,
 }
 
 type Store struct {

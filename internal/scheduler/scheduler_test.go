@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -41,15 +42,15 @@ func TestCheck_SendsDue(t *testing.T) {
 	for _, n := range env.Ntfy.All() {
 		byTopic[n.Topic] = n
 	}
-	d := byTopic["reminders"]
+	d := byTopic["alice_reminders"] // the owner's default topic
 	if d.Title != "Reminder" || d.Body != "Dentist is tomorrow at 10:00" || d.Priority != "high" ||
-		d.Tags != "calendar" || d.Auth != "Bearer tk_test" {
+		d.Tags != "calendar" || d.Auth != "Bearer "+testutil.UserToken {
 		t.Errorf("dentist notification: %+v", d)
 	}
 	if b := byTopic["family"]; b.Title != "Birthday Reminder" || b.Body != "Mom's birthday is tomorrow!" {
 		t.Errorf("birthday notification: %+v", b)
 	}
-	if hist, _ := env.Store.RecentHistory(10); len(hist) != 2 {
+	if hist, _ := env.Store.RecentHistory(testutil.User, 10); len(hist) != 2 {
 		t.Errorf("history has %d records", len(hist))
 	}
 }
@@ -109,9 +110,9 @@ func TestCheck_RenameDoesNotResend(t *testing.T) {
 	s, env := setup(t, `[{"name":"Dentist","date":"2026-10-03T10:00","reminders":["1d"]}]`)
 	check(t, s)
 	id := env.ID(t, "Dentist")
-	e, _ := env.Store.GetEvent(id)
+	e, _ := env.Store.GetEvent(testutil.User, id)
 	e.Name = "Dentist (Dr. Smith)"
-	if _, err := env.Store.UpdateEvent(id, e); err != nil {
+	if _, err := env.Store.UpdateEvent(testutil.User, id, e); err != nil {
 		t.Fatal(err)
 	}
 	check(t, s)
@@ -130,12 +131,12 @@ func TestCheck_SkipsOutsideCatchup(t *testing.T) {
 
 func TestCheck_RetriesAfterFailure(t *testing.T) {
 	s, env := setup(t, `[{"name":"Dentist","date":"2026-10-03T10:00","reminders":["1d"]}]`)
-	good := s.ntfy.URL
-	s.ntfy.URL = "http://127.0.0.1:1" // nothing listening
+	good := s.cfg.NtfyURL
+	s.cfg.NtfyURL = "http://127.0.0.1:1" // nothing listening
 	if n, _ := check(t, s); n != 0 {
 		t.Fatalf("sent %d while ntfy was down", n)
 	}
-	s.ntfy.URL = good
+	s.cfg.NtfyURL = good
 	testutil.FreezeClock(t, testutil.FixedNow.Add(retryEvery))
 	if n, _ := check(t, s); n != 1 || len(env.Ntfy.All()) != 1 {
 		t.Errorf("retry sent %d", n)
@@ -144,11 +145,11 @@ func TestCheck_RetriesAfterFailure(t *testing.T) {
 
 func TestCheck_RetriesEveryFiveMinutes(t *testing.T) {
 	s, _ := setup(t, `[{"name":"Dentist","date":"2026-10-03T10:00","reminders":["1d"]}]`)
-	good := s.ntfy.URL
-	s.ntfy.URL = "http://127.0.0.1:1"
+	good := s.cfg.NtfyURL
+	s.cfg.NtfyURL = "http://127.0.0.1:1"
 	check(t, s) // fails at 10:00
 
-	s.ntfy.URL = good
+	s.cfg.NtfyURL = good
 	testutil.FreezeClock(t, testutil.FixedNow.Add(4*time.Minute))
 	if n, _ := check(t, s); n != 0 {
 		t.Fatal("retried before 5 minutes passed")
@@ -204,11 +205,11 @@ func TestCheck_DryRun(t *testing.T) {
 	if len(env.Ntfy.All()) != 0 {
 		t.Error("dry run sent a notification")
 	}
-	if hist, _ := env.Store.RecentHistory(10); len(hist) != 0 {
+	if hist, _ := env.Store.RecentHistory(testutil.User, 10); len(hist) != 0 {
 		t.Error("dry run recorded history")
 	}
-	if _, err := os.Stat(env.Cfg.ExportFile); err == nil {
-		t.Error("dry run wrote the export file")
+	if _, err := os.Stat(env.Cfg.ExportDir); err == nil {
+		t.Error("dry run wrote the export files")
 	}
 }
 
@@ -236,13 +237,14 @@ func TestAutoRemoveFinished(t *testing.T) {
 
 func TestAutoRemoveFinished_WaitsForPendingReminder(t *testing.T) {
 	// Event at 09:30 today, 30m reminder fired 09:00 but not sent yet → keep for retry.
-	s, env := setup(t, `[{"name":"Call","date":"2026-10-02T09:30","reminders":["30m"]}]`)
-	s.ntfy.URL = "http://127.0.0.1:1"
+	s, _ := setup(t, `[{"name":"Call","date":"2026-10-02T09:30","reminders":["30m"]}]`)
+	good := s.cfg.NtfyURL
+	s.cfg.NtfyURL = "http://127.0.0.1:1"
 	check(t, s)
 	if n, _ := s.AutoRemoveFinished(testutil.FixedNow); n != 0 {
 		t.Fatal("removed an event with a pending reminder")
 	}
-	s.ntfy.URL = env.Cfg.NtfyURL
+	s.cfg.NtfyURL = good
 	later := testutil.FixedNow.Add(retryEvery)
 	testutil.FreezeClock(t, later)
 	check(t, s)
@@ -255,7 +257,7 @@ func TestExportFileFollowsChanges(t *testing.T) {
 	s, env := setup(t, `[{"name":"Dentist","date":"2026-11-15T10:00","reminders":["1d"]}]`)
 	check(t, s)
 	exported := func() []string {
-		data, err := os.ReadFile(env.Cfg.ExportFile)
+		data, err := os.ReadFile(filepath.Join(env.Cfg.ExportDir, testutil.User+".json"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -272,7 +274,7 @@ func TestExportFileFollowsChanges(t *testing.T) {
 	if got := exported(); !slices.Equal(got, []string{"Dentist"}) {
 		t.Fatalf("export = %v", got)
 	}
-	if _, err := env.Store.CreateEvent(events.Event{Name: "Flight", Date: "2026-12-20T06:30", Reminders: []string{"1d"}}); err != nil {
+	if _, err := env.Store.CreateEvent(testutil.User, events.Event{Name: "Flight", Date: "2026-12-20T06:30", Reminders: []string{"1d"}}); err != nil {
 		t.Fatal(err)
 	}
 	check(t, s)
@@ -290,7 +292,7 @@ func TestRun_WakesImmediatelyOnChange(t *testing.T) {
 
 	// Wait for the first pass, then add an event that is due right now and wake the loop.
 	waitFor(t, func() bool { _, ok := s.LastCheck(); return ok })
-	if _, err := env.Store.CreateEvent(events.Event{Name: "Now", Date: "2026-10-02T10:30", Reminders: []string{"30m"}}); err != nil {
+	if _, err := env.Store.CreateEvent(testutil.User, events.Event{Name: "Now", Date: "2026-10-02T10:30", Reminders: []string{"30m"}}); err != nil {
 		t.Fatal(err)
 	}
 	s.Wake()
@@ -305,5 +307,35 @@ func waitFor(t *testing.T, cond func() bool) {
 			t.Fatal("condition not met within 3s")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestCheck_EachUserWithOwnTokenAndTopic(t *testing.T) {
+	s, env := setup(t, `[{"name":"Dentist","date":"2026-10-03T10:00","reminders":["1d"]}]`)
+	if _, err := env.Store.CreateUser(testutil.Other, testutil.OtherToken); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := env.Store.CreateEvent(testutil.Other, events.Event{Name: "Gym", Date: "2026-10-03T10:00", Reminders: []string{"1d"}, Topic: "family"}); err != nil {
+		t.Fatal(err)
+	}
+	testutil.FreezeClock(t, time.Date(2026, 10, 2, 9, 5, 0, 0, testutil.Loc)) // both "1d" reminders fired at 09:00
+	check(t, s)
+	got := map[string]testutil.Notification{}
+	for _, n := range env.Ntfy.All() {
+		got[n.Body] = n
+	}
+	if n := got["Dentist is tomorrow at 10:00"]; n.Topic != "alice_reminders" || n.Auth != "Bearer "+testutil.UserToken {
+		t.Errorf("alice's reminder: %+v", n)
+	}
+	if n := got["Gym is tomorrow at 10:00"]; n.Topic != "family" || n.Auth != "Bearer "+testutil.OtherToken {
+		t.Errorf("bob's reminder: %+v", n)
+	}
+	if hist, _ := env.Store.RecentHistory(testutil.Other, 10); len(hist) != 1 || hist[0].EventName != "Gym" {
+		t.Errorf("bob's history: %+v", hist)
+	}
+	for _, name := range []string{testutil.User, testutil.Other} {
+		if _, err := os.Stat(filepath.Join(env.Cfg.ExportDir, name+".json")); err != nil {
+			t.Errorf("no export file for %s: %v", name, err)
+		}
 	}
 }

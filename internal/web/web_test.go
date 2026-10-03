@@ -31,13 +31,29 @@ func (f *fakeSched) Wake()                        { f.wakes.Add(1) }
 func (f *fakeSched) LastCheck() (time.Time, bool) { return testutil.FixedNow, true }
 func (f *fakeSched) Next() (time.Time, bool)      { return f.next, !f.next.IsZero() }
 
-func newTestMux(t *testing.T, doc string) (*testutil.Env, *http.ServeMux, *fakeSched) {
+// newTestMux returns the app with every request logged in as testutil.User
+// (unless the request already carries a cookie).
+func newTestMux(t *testing.T, doc string) (*testutil.Env, http.Handler, *fakeSched) {
+	t.Helper()
+	env, h, sched := newApp(t, doc)
+	cookie, err := env.Store.CreateSession(testutil.User, sessionTTL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return env, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Cookie") == "" {
+			r.AddCookie(&http.Cookie{Name: sessionCookie, Value: cookie})
+		}
+		h.ServeHTTP(w, r)
+	}), sched
+}
+
+// newApp returns the app as an anonymous visitor sees it.
+func newApp(t *testing.T, doc string) (*testutil.Env, http.Handler, *fakeSched) {
 	t.Helper()
 	env := testutil.NewEnv(t, doc)
 	sched := &fakeSched{next: time.Date(2026, 10, 4, 9, 0, 0, 0, testutil.Loc)}
-	mux := http.NewServeMux()
-	Register(mux, env.Cfg, env.Store, sched)
-	return env, mux, sched
+	return env, Handler(env.Cfg, env.Store, sched), sched
 }
 
 func do(mux http.Handler, method, target string, body string, headers map[string]string) *httptest.ResponseRecorder {
@@ -68,7 +84,7 @@ func alpineState(t *testing.T, body string) map[string]any {
 
 func get(t *testing.T, env *testutil.Env, name string) events.Event {
 	t.Helper()
-	e, err := env.Store.GetEvent(env.ID(t, name))
+	e, err := env.Store.GetEvent(testutil.User, env.ID(t, name))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,7 +195,7 @@ func TestEditEvent_KeepsID(t *testing.T) {
 	if rr.Code != 200 || !strings.Contains(rr.Header().Get("HX-Trigger"), "Changes saved") {
 		t.Fatalf("status %d trigger %q", rr.Code, rr.Header().Get("HX-Trigger"))
 	}
-	e, err := env.Store.GetEvent(id)
+	e, err := env.Store.GetEvent(testutil.User, id)
 	if err != nil {
 		t.Fatalf("event lost its ID: %v", err)
 	}
@@ -249,33 +265,43 @@ func TestDeleteEvent(t *testing.T) {
 	}
 }
 
-func TestFeedICS(t *testing.T) {
-	_, mux, _ := newTestMux(t, sampleEvents)
-	rr := do(mux, "GET", "/feed.ics", "", nil)
+func TestFeed(t *testing.T) {
+	env, mux, _ := newTestMux(t, sampleEvents)
+	_, anon, _ := newApp(t, "")
+	u, err := env.Store.GetUser(testutil.User)
+	if err != nil {
+		t.Fatal(err)
+	}
+	feed := "/feed/" + u.FeedToken + ".ics"
+
+	// Calendar apps fetch the feed without logging in: the URL is the secret.
+	rr := do(mux, "GET", feed, "", map[string]string{"Cookie": "none=1"})
 	if rr.Code != 200 || rr.Header().Get("Content-Type") != "text/calendar; charset=utf-8" {
-		t.Fatalf("status %d content-type %q", rr.Code, rr.Header().Get("Content-Type"))
+		t.Fatalf("feed: status %d content-type %q", rr.Code, rr.Header().Get("Content-Type"))
 	}
 	if body := rr.Body.String(); !strings.HasPrefix(body, "BEGIN:VCALENDAR") || strings.Count(body, "BEGIN:VEVENT") != 2 {
 		t.Errorf("bad feed:\n%s", body)
 	}
-}
-
-func TestFeedToken(t *testing.T) {
-	env, mux, _ := newTestMux(t, sampleEvents)
-	env.Cfg.FeedToken = "s3cret-token-abcdef123456"
-
-	if rr := do(mux, "GET", "/feed/s3cret-token-abcdef123456.ics", "", nil); rr.Code != 200 ||
-		!strings.HasPrefix(rr.Body.String(), "BEGIN:VCALENDAR") {
-		t.Errorf("feed with token: %d", rr.Code)
-	}
-	for _, path := range []string{"/feed.ics", "/feed/wrong-token-abcdef1234567.ics", "/feed/s3cret-token-abcdef123456", "/feed/s3cret-token-abcdef123456.ics.bak"} {
-		if rr := do(mux, "GET", path, "", nil); rr.Code != 404 {
+	for _, path := range []string{"/feed.ics", "/feed/wrong-token-abcdef1234567.ics", "/feed/.ics",
+		"/feed/" + u.FeedToken, "/feed/" + u.FeedToken + ".ics.bak"} {
+		if rr := do(anon, "GET", path, "", nil); rr.Code != 404 {
 			t.Errorf("%s: status %d, want 404", path, rr.Code)
 		}
 	}
-	// The (private) dashboard links to the secret URL so it can be copied.
-	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `href="/feed/s3cret-token-abcdef123456.ics"`) {
-		t.Error("dashboard doesn't link to the secret feed URL")
+	// The dashboard links to the user's secret URL so it can be copied.
+	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `href="`+feed+`"`) {
+		t.Error("dashboard doesn't link to the feed URL")
+	}
+
+	// Replacing the link: the old one stops working, the new one works.
+	rr = do(mux, "POST", "/feed/reset", "", map[string]string{"HX-Request": "true"})
+	u2, _ := env.Store.GetUser(testutil.User)
+	newFeed := "/feed/" + u2.FeedToken + ".ics"
+	if rr.Code != 200 || newFeed == feed || !strings.Contains(rr.Body.String(), `href="`+newFeed+`"`) {
+		t.Fatalf("reset: %d %s", rr.Code, rr.Body.String())
+	}
+	if do(mux, "GET", feed, "", nil).Code != 404 || do(mux, "GET", newFeed, "", nil).Code != 200 {
+		t.Error("old link still works or new link doesn't")
 	}
 }
 

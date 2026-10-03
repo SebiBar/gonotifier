@@ -2,21 +2,60 @@ package web
 
 import "strconv"
 
+templ head(title string) {
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1"/>
+		<title>{ title }</title>
+		<link rel="icon" type="image/svg+xml" href={ asset("favicon.svg") }/>
+		<link rel="preload" href="/static/vendor/inter-latin.woff2" as="font" type="font/woff2" crossorigin/>
+		<link rel="stylesheet" href={ asset("vendor/pico.min.css") }/>
+		<link rel="stylesheet" href={ asset("app.css") }/>
+		<script src={ asset("vendor/htmx.min.js") }></script>
+		<script defer src={ asset("vendor/alpine.min.js") }></script>
+	</head>
+}
+
+// Login is the login page. Usernames and passwords are the user's ntfy account.
+templ Login(username, errMsg string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		@head("Log in · gonotifier")
+		<body>
+			@iconSprite()
+			<main class="container login">
+				<div class="brand">
+					@Icon("bell")
+					<span>gonotifier</span>
+				</div>
+				<form class="panel login-panel" method="post" action="/login">
+					if errMsg != "" {
+						<div class="form-errors" role="alert">
+							@Icon("alert")
+							<div><p>{ errMsg }</p></div>
+						</div>
+					}
+					<label class="field">
+						<span class="field-label">Username</span>
+						<input type="text" name="username" value={ username } autocomplete="username" autocapitalize="none" required autofocus/>
+					</label>
+					<label class="field">
+						<span class="field-label">Password</span>
+						<input type="password" name="password" autocomplete="current-password" required/>
+					</label>
+					<button type="submit" class="btn btn-primary">Log in</button>
+					<p class="hint">Log in with your ntfy account.</p>
+				</form>
+			</main>
+		</body>
+	</html>
+}
+
 // Page is the full dashboard: layout, upcoming list, events, history, dialogs.
 templ Page(p pageData) {
 	<!DOCTYPE html>
 	<html lang="en">
-		<head>
-			<meta charset="utf-8"/>
-			<meta name="viewport" content="width=device-width, initial-scale=1"/>
-			<title>gonotifier</title>
-			<link rel="icon" type="image/svg+xml" href={ asset("favicon.svg") }/>
-			<link rel="preload" href="/static/vendor/inter-latin.woff2" as="font" type="font/woff2" crossorigin/>
-			<link rel="stylesheet" href={ asset("vendor/pico.min.css") }/>
-			<link rel="stylesheet" href={ asset("app.css") }/>
-			<script src={ asset("vendor/htmx.min.js") }></script>
-			<script defer src={ asset("vendor/alpine.min.js") }></script>
-		</head>
+		@head("gonotifier")
 		<body
 			x-data="{ pending: null }"
 			@open-dialog.window="$refs.dialog.open || $refs.dialog.showModal()"
@@ -30,10 +69,18 @@ templ Page(p pageData) {
 						@Icon("bell")
 						<span>gonotifier</span>
 					</a>
-					<button type="button" class="btn btn-primary" hx-get="/events/new" hx-target="#dialog-content">
-						@Icon("plus")
-						<span>New event</span>
-					</button>
+					<div class="topbar-actions">
+						<span class="muted small user-name">{ p.Username }</span>
+						<form method="post" action="/logout">
+							<button type="submit" class="icon-btn" title="Log out" aria-label="Log out">
+								@Icon("log-out")
+							</button>
+						</form>
+						<button type="button" class="btn btn-primary" hx-get="/events/new" hx-target="#dialog-content">
+							@Icon("plus")
+							<span>New event</span>
+						</button>
+					</div>
 				</div>
 			</header>
 			<main class="container">
@@ -49,10 +96,7 @@ templ Page(p pageData) {
 				<section class="panel">
 					<div class="panel-head">
 						<h2>Events <span class="count" id="events-count">{ strconv.Itoa(len(p.Events)) }</span></h2>
-						<a href={ templ.URL(p.FeedPath) } class="link-quiet" title="Calendar feed URL: copy it into Google Calendar → Add calendar → From URL">
-							@Icon("rss")
-							<span>Calendar feed</span>
-						</a>
+						@FeedLink(p.FeedPath)
 					</div>
 					<div id="event-list" class="rows">
 						@EventList(p)
@@ -76,18 +120,42 @@ templ Page(p pageData) {
 			<dialog x-ref="confirm" class="modal modal-sm" @click.self="$el.close()" @close="pending = null">
 				<article>
 					<div class="modal-body">
-						<h3 class="modal-title">Delete event?</h3>
+						<h3 class="modal-title" x-text="(pending && pending.elt.dataset.confirmTitle) || 'Delete event?'">Delete event?</h3>
 						<p class="muted" x-text="pending && pending.question"></p>
 					</div>
 					<div class="modal-foot">
 						<button type="button" class="btn btn-ghost" @click="$refs.confirm.close()">Cancel</button>
-						<button type="button" class="btn btn-danger" @click="pending && pending.issueRequest(true); $refs.confirm.close()">Delete</button>
+						<button type="button" class="btn btn-danger" @click="pending && pending.issueRequest(true); $refs.confirm.close()" x-text="(pending && pending.elt.dataset.confirmAction) || 'Delete'">Delete</button>
 					</div>
 				</article>
 			</dialog>
 			@toast()
 		</body>
 	</html>
+}
+
+// FeedLink is the user's secret calendar feed URL, with a button to replace it.
+templ FeedLink(path string) {
+	<div id="feed" class="feed">
+		<a href={ templ.URL(path) } class="link-quiet" title="Your private calendar feed: copy the link into Google Calendar → Add calendar → From URL">
+			@Icon("rss")
+			<span>Calendar feed</span>
+		</a>
+		<button
+			type="button"
+			class="icon-btn"
+			title="New calendar link"
+			aria-label="Replace calendar link"
+			hx-post="/feed/reset"
+			hx-target="#feed"
+			hx-swap="outerHTML"
+			hx-confirm="The current link stops working: calendars subscribed to it need the new one."
+			data-confirm-title="Replace calendar link?"
+			data-confirm-action="Replace"
+		>
+			@Icon("rotate")
+		</button>
+	</div>
 }
 
 templ history(items []HistoryView) {
@@ -169,5 +237,7 @@ templ iconSprite() {
 		<symbol id="i-rss" viewBox="0 0 24 24"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></symbol>
 		<symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></symbol>
 		<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+		<symbol id="i-log-out" viewBox="0 0 24 24"><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path></symbol>
+		<symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></symbol>
 	</svg>
 }

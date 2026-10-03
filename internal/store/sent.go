@@ -13,6 +13,7 @@ import (
 // Record is one sent reminder.
 type Record struct {
 	ID         string
+	Owner      string
 	EventID    string
 	EventName  string
 	Offset     string
@@ -42,18 +43,18 @@ func (s *Store) IsSent(key string) (bool, error) {
 // RecordSent logs a sent reminder.
 func (s *Store) RecordSent(r Record) error {
 	_, err := s.db.Exec(
-		`INSERT OR IGNORE INTO sent (id, event_id, event_name, offset, target_date, fire_time, sent_at, message)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		r.ID, r.EventID, r.EventName, r.Offset, r.TargetDate,
+		`INSERT OR IGNORE INTO sent (id, owner, event_id, event_name, offset, target_date, fire_time, sent_at, message)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		r.ID, r.Owner, r.EventID, r.EventName, r.Offset, r.TargetDate,
 		r.FireTime.UTC().Format(dbTimeFormat), clock.Now().UTC().Format(dbTimeFormat), r.Message)
 	return err
 }
 
-// RecentHistory returns the most recent sent reminders, newest first.
-func (s *Store) RecentHistory(limit int) ([]Record, error) {
+// RecentHistory returns the user's most recent sent reminders, newest first.
+func (s *Store) RecentHistory(owner string, limit int) ([]Record, error) {
 	rows, err := s.db.Query(
-		`SELECT id, event_id, event_name, offset, target_date, fire_time, sent_at, message
-		 FROM sent ORDER BY sent_at DESC, rowid DESC LIMIT ?`, limit)
+		`SELECT id, owner, event_id, event_name, offset, target_date, fire_time, sent_at, message
+		 FROM sent WHERE owner = ? ORDER BY sent_at DESC, rowid DESC LIMIT ?`, owner, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func (s *Store) RecentHistory(limit int) ([]Record, error) {
 	for rows.Next() {
 		var r Record
 		var fire, sent string
-		if err := rows.Scan(&r.ID, &r.EventID, &r.EventName, &r.Offset, &r.TargetDate, &fire, &sent, &r.Message); err != nil {
+		if err := rows.Scan(&r.ID, &r.Owner, &r.EventID, &r.EventName, &r.Offset, &r.TargetDate, &fire, &sent, &r.Message); err != nil {
 			return nil, err
 		}
 		r.FireTime, _ = time.Parse(dbTimeFormat, fire)

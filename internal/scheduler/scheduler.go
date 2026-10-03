@@ -14,6 +14,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -38,13 +39,12 @@ const (
 type Scheduler struct {
 	cfg   *config.Config
 	store *store.Store
-	ntfy  notify.Ntfy
 	wake  chan struct{}
 
 	mu            sync.Mutex // one pass at a time
 	lastHousekeep time.Time
 	failedAt      map[string]time.Time // reminder key → last failed send (in memory)
-	exported      uint64               // store version last written to the export file
+	exported      uint64               // store version last written to the export files
 
 	lastCheck atomic.Value // time.Time
 	next      atomic.Value // time.Time; zero = nothing scheduled
@@ -54,7 +54,6 @@ func New(cfg *config.Config, st *store.Store) *Scheduler {
 	return &Scheduler{
 		cfg:      cfg,
 		store:    st,
-		ntfy:     notify.Ntfy{URL: cfg.NtfyURL, Token: cfg.NtfyToken},
 		wake:     make(chan struct{}, 1),
 		failedAt: map[string]time.Time{},
 		exported: math.MaxUint64, // forces the first export
@@ -111,7 +110,7 @@ func (s *Scheduler) Check(dryRun bool) (int, time.Time, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	evs, err := s.store.ListEvents()
+	evs, err := s.store.AllEvents()
 	if err != nil {
 		return 0, time.Time{}, err
 	}
@@ -120,6 +119,9 @@ func (s *Scheduler) Check(dryRun bool) (int, time.Time, error) {
 	var next time.Time
 
 	for _, e := range evs {
+		if e.Owner == "" {
+			continue // from before users existed: sent once someone logs in and owns it
+		}
 		lead := e.MaxLead()
 		scanned := 0
 		// Any reminder still worth sending fires at ≥ now-catchup, and fires never
@@ -192,25 +194,30 @@ func (s *Scheduler) deliver(e events.Event, off string, occ, fire, now time.Time
 	}
 	topic := e.Topic
 	if topic == "" {
-		topic = s.cfg.NtfyDefaultTopic
+		topic = notify.DefaultTopic(e.Owner)
 	}
 	if dryRun {
-		slog.Info("dry run: would send", "event", e.Name, "offset", off, "topic", topic, "title", title, "message", msg)
+		slog.Info("dry run: would send", "user", e.Owner, "event", e.Name, "offset", off, "topic", topic, "title", title, "message", msg)
 		return true, nil
 	}
-	if err := s.ntfy.Send(topic, title, msg, e.Priority, tags); err != nil {
+	// Sent with the owner's own token, so ntfy only lets them post to their own topics.
+	u, err := s.store.GetUser(e.Owner)
+	if err != nil {
+		return false, err
+	}
+	if err := (notify.Ntfy{URL: s.cfg.NtfyURL, Token: u.NtfyToken}).Send(topic, title, msg, e.Priority, tags); err != nil {
 		// Not recorded, so it's retried every retryEvery while inside the catchup window.
 		s.failedAt[key] = now
-		slog.Error("ntfy send failed", "event", e.Name, "offset", off, "topic", topic, "retry_in", retryEvery, "err", err)
+		slog.Error("ntfy send failed", "user", e.Owner, "event", e.Name, "offset", off, "topic", topic, "retry_in", retryEvery, "err", err)
 		return false, nil
 	}
 	delete(s.failedAt, key)
 	if err := s.store.RecordSent(store.Record{
-		ID: key, EventID: e.ID, EventName: e.Name, Offset: off, TargetDate: date, FireTime: fire, Message: msg,
+		ID: key, Owner: e.Owner, EventID: e.ID, EventName: e.Name, Offset: off, TargetDate: date, FireTime: fire, Message: msg,
 	}); err != nil {
 		slog.Error("record sent failed", "event", e.Name, "err", err)
 	}
-	slog.Info("sent reminder", "event", e.Name, "offset", off, "occurrence", date, "topic", topic)
+	slog.Info("sent reminder", "user", e.Owner, "event", e.Name, "offset", off, "occurrence", date, "topic", topic)
 	return true, nil
 }
 
@@ -228,13 +235,16 @@ func (s *Scheduler) housekeep(now time.Time) {
 	if err := s.store.Prune(historyRetention); err != nil {
 		slog.Error("prune failed", "err", err)
 	}
+	if err := s.store.PruneSessions(); err != nil {
+		slog.Error("prune sessions failed", "err", err)
+	}
 }
 
 // AutoRemoveFinished deletes events that have auto-remove on, have no occurrence
 // left (one-time events that passed, repeats past `until`), and have no reminder
 // still waiting to be sent or retried.
 func (s *Scheduler) AutoRemoveFinished(now time.Time) (int, error) {
-	evs, err := s.store.ListEvents()
+	evs, err := s.store.AllEvents()
 	if err != nil {
 		return 0, err
 	}
@@ -253,7 +263,7 @@ func (s *Scheduler) AutoRemoveFinished(now time.Time) (int, error) {
 		if pending {
 			continue
 		}
-		if err := s.store.DeleteEvent(e.ID); err != nil && err != store.ErrNotFound {
+		if err := s.store.DeleteEvent(e.Owner, e.ID); err != nil && err != store.ErrNotFound {
 			return removed, err
 		}
 		slog.Info("auto-removed event", "event", e.Name, "date", e.Date)
@@ -283,29 +293,41 @@ func (s *Scheduler) hasPending(e events.Event, now time.Time) (bool, error) {
 	return false, nil
 }
 
-// writeExport rewrites the read-only JSON snapshot when events changed since the last
-// write. Edits to the file are ignored; it can be restored through /api/import.
+// writeExport rewrites each user's read-only JSON snapshot (<ExportDir>/<username>.json)
+// when events changed since the last write. Edits to the files are ignored; a user can
+// restore theirs through /api/import.
 func (s *Scheduler) writeExport() {
-	if s.cfg.ExportFile == "" {
+	if s.cfg.ExportDir == "" {
 		return
 	}
 	v := s.store.Version()
 	if v == s.exported {
 		return
 	}
-	evs, err := s.store.ListEvents()
+	users, err := s.store.Usernames()
 	if err != nil {
-		slog.Error("export: list events", "err", err)
+		slog.Error("export: list users", "err", err)
 		return
 	}
-	data, err := events.Encode(evs)
-	if err != nil {
-		slog.Error("export: encode", "err", err)
-		return
-	}
-	if err := writeFileAtomic(s.cfg.ExportFile, data); err != nil {
-		slog.Error("export: write", "path", s.cfg.ExportFile, "err", err)
-		return
+	for _, name := range users {
+		if name != filepath.Base(name) || strings.HasPrefix(name, ".") {
+			continue // not a safe file name
+		}
+		evs, err := s.store.ListEvents(name)
+		if err != nil {
+			slog.Error("export: list events", "user", name, "err", err)
+			return
+		}
+		data, err := events.Encode(evs)
+		if err != nil {
+			slog.Error("export: encode", "user", name, "err", err)
+			return
+		}
+		path := filepath.Join(s.cfg.ExportDir, name+".json")
+		if err := writeFileAtomic(path, data); err != nil {
+			slog.Error("export: write", "path", path, "err", err)
+			return
+		}
 	}
 	s.exported = v
 }

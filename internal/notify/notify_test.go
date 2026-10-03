@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -68,6 +69,18 @@ func TestFormatLate(t *testing.T) {
 	for _, c := range cases {
 		if got := FormatLate(c.e, c.occ, now); got != c.want {
 			t.Errorf("FormatLate(%v) = %q, want %q", c.occ, got, c.want)
+		}
+	}
+}
+
+func TestDefaultTopic(t *testing.T) {
+	for user, want := range map[string]string{
+		"sebi":                  "sebi_reminders",
+		"ana.m@home":            "ana_m_home_reminders",
+		strings.Repeat("a", 80): strings.Repeat("a", 54) + "_reminders",
+	} {
+		if got := DefaultTopic(user); got != want {
+			t.Errorf("DefaultTopic(%q) = %q, want %q", user, got, want)
 		}
 	}
 }

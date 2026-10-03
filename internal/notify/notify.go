@@ -2,6 +2,8 @@
 package notify
 
 import (
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime"
@@ -20,6 +22,74 @@ type Ntfy struct {
 }
 
 var httpClient = &http.Client{Timeout: 15 * time.Second}
+
+// ErrUnauthorized means ntfy rejected the credentials.
+var ErrUnauthorized = errors.New("wrong username, password or token")
+
+// Account returns the username that the Authorization header ("Basic …" or "Bearer tk_…")
+// belongs to, or ErrUnauthorized.
+func (n Ntfy) Account(authorization string) (string, error) {
+	var acc struct {
+		Username string `json:"username"`
+	}
+	if err := n.account(http.MethodGet, "/v1/account", authorization, nil, &acc); err != nil {
+		return "", err
+	}
+	if acc.Username == "" || acc.Username == "*" { // "*" is ntfy's anonymous user
+		return "", ErrUnauthorized
+	}
+	return acc.Username, nil
+}
+
+// CreateToken creates a token that never expires for the user the Authorization header belongs to.
+func (n Ntfy) CreateToken(authorization string) (string, error) {
+	var tok struct {
+		Token string `json:"token"`
+	}
+	body := strings.NewReader(`{"label":"gonotifier","expires":0}`)
+	if err := n.account(http.MethodPost, "/v1/account/token", authorization, body, &tok); err != nil {
+		return "", err
+	}
+	if tok.Token == "" {
+		return "", errors.New("ntfy returned no token")
+	}
+	return tok.Token, nil
+}
+
+func (n Ntfy) account(method, path, authorization string, body io.Reader, out any) error {
+	if authorization == "" {
+		return ErrUnauthorized
+	}
+	req, err := http.NewRequest(method, strings.TrimRight(n.URL, "/")+path, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", authorization)
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
+		return ErrUnauthorized
+	case resp.StatusCode/100 != 2:
+		msg, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return fmt.Errorf("ntfy returned %s: %s", resp.Status, strings.TrimSpace(string(msg)))
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(out)
+}
+
+var reTopicUnsafe = regexp.MustCompile(`[^A-Za-z0-9_-]`)
+
+// DefaultTopic is where a user's reminders go when an event doesn't set a topic: <username>_reminders.
+func DefaultTopic(username string) string {
+	name := reTopicUnsafe.ReplaceAllString(username, "_") // ntfy usernames may contain . + @
+	if len(name) > 54 {
+		name = name[:54] // topics are at most 64 characters
+	}
+	return name + "_reminders"
+}
 
 // Send POSTs a message to {URL}/{topic} with Title, Priority and Tags headers.
 func (n Ntfy) Send(topic, title, message, priority, tags string) error {

@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -17,12 +16,9 @@ import (
 )
 
 type Config struct {
-	NtfyURL           string
-	NtfyToken         string
-	NtfyDefaultTopic  string
+	NtfyURL           string // also where users log in: their username and password are checked by ntfy
 	DBPath            string
-	ExportFile        string // read-only JSON snapshot of all events; "" = disabled
-	FeedToken         string // if set, the iCal feed is only served at /feed/<token>.ics
+	ExportDir         string // read-only JSON snapshot of each user's events, <username>.json; "" = disabled
 	TZ                *time.Location
 	CatchupWindow     time.Duration
 	DefaultNotifyTime events.TimeOnly
@@ -30,36 +26,19 @@ type Config struct {
 	LogLevel          slog.Level
 }
 
-// reFeedToken keeps the secret feed URL hard to guess and safe in a URL path.
-var reFeedToken = regexp.MustCompile(`^[A-Za-z0-9_-]{16,}$`)
-
-// FeedPath is the URL path the calendar feed is served at.
-func (c *Config) FeedPath() string {
-	if c.FeedToken == "" {
-		return "/feed.ics"
-	}
-	return "/feed/" + c.FeedToken + ".ics"
-}
-
 // Load reads environment variables, validates them and returns the Config.
 func Load() (*Config, error) {
 	var errs []error
 	cfg := &Config{
-		NtfyURL:          strings.TrimRight(os.Getenv("NTFY_URL"), "/"),
-		NtfyToken:        os.Getenv("NTFY_TOKEN"),
-		NtfyDefaultTopic: envOr("NTFY_DEFAULT_TOPIC", "reminders"),
-		DBPath:           envOr("DB_PATH", "/data/gonotifier.db"),
+		NtfyURL: strings.TrimRight(os.Getenv("NTFY_URL"), "/"),
+		DBPath:  envOr("DB_PATH", "/data/gonotifier.db"),
 	}
 	if cfg.NtfyURL == "" {
 		errs = append(errs, errors.New("NTFY_URL is required"))
 	}
-	cfg.ExportFile = envOr("EXPORT_FILE", filepath.Join(filepath.Dir(cfg.DBPath), "events-export.json"))
-	if cfg.ExportFile == "off" {
-		cfg.ExportFile = ""
-	}
-	cfg.FeedToken = envOr("FEED_TOKEN", "")
-	if cfg.FeedToken != "" && !reFeedToken.MatchString(cfg.FeedToken) {
-		errs = append(errs, errors.New("FEED_TOKEN must be at least 16 characters of A-Z, a-z, 0-9, - or _ (e.g. openssl rand -hex 24)"))
+	cfg.ExportDir = envOr("EXPORT_DIR", filepath.Join(filepath.Dir(cfg.DBPath), "exports"))
+	if cfg.ExportDir == "off" {
+		cfg.ExportDir = ""
 	}
 
 	loc, err := time.LoadLocation(envOr("TZ", "UTC"))
@@ -85,6 +64,22 @@ func Load() (*Config, error) {
 		return nil, errors.Join(errs...)
 	}
 	return cfg, nil
+}
+
+// Removed lists settings from older versions that are now ignored, and what replaced them.
+func Removed() map[string]string {
+	gone := map[string]string{}
+	for key, why := range map[string]string{
+		"NTFY_TOKEN":         "reminders are sent with each user's own ntfy token, created when they log in",
+		"NTFY_DEFAULT_TOPIC": "each user's default topic is <username>_reminders",
+		"FEED_TOKEN":         "each user has their own calendar feed URL, shown in the web UI",
+		"EXPORT_FILE":        "use EXPORT_DIR (one file per user)",
+	} {
+		if os.Getenv(key) != "" {
+			gone[key] = why
+		}
+	}
+	return gone
 }
 
 func envOr(key, def string) string {

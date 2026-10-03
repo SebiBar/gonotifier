@@ -13,7 +13,7 @@ import (
 	"github.com/sebibar/gonotifier/internal/store"
 )
 
-// The JSON API has no authentication — expose it only on an internal network.
+// The JSON API needs a logged-in user (see requireAPIUser) and only ever sees that user's events.
 
 const maxImportBytes = 4 << 20
 
@@ -62,7 +62,7 @@ func decodeEvent(w http.ResponseWriter, r *http.Request) (events.Event, bool) {
 }
 
 func (s *server) apiListEvents(w http.ResponseWriter, r *http.Request) {
-	evs, err := s.store.ListEvents()
+	evs, err := s.store.ListEvents(userOf(r))
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -75,7 +75,7 @@ func (s *server) apiListEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) apiGetEvent(w http.ResponseWriter, r *http.Request) {
-	e, err := s.store.GetEvent(r.PathValue("id"))
+	e, err := s.store.GetEvent(userOf(r), r.PathValue("id"))
 	if err != nil {
 		apiSaveError(w, err)
 		return
@@ -89,7 +89,7 @@ func (s *server) apiCreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e.ID = "" // IDs are assigned by the server
-	saved, err := s.store.CreateEvent(e)
+	saved, err := s.store.CreateEvent(userOf(r), e)
 	if err != nil {
 		apiSaveError(w, err)
 		return
@@ -103,7 +103,7 @@ func (s *server) apiUpdateEvent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	saved, err := s.store.UpdateEvent(r.PathValue("id"), e)
+	saved, err := s.store.UpdateEvent(userOf(r), r.PathValue("id"), e)
 	if err != nil {
 		apiSaveError(w, err)
 		return
@@ -113,7 +113,7 @@ func (s *server) apiUpdateEvent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) apiDeleteEvent(w http.ResponseWriter, r *http.Request) {
-	if err := s.store.DeleteEvent(r.PathValue("id")); err != nil {
+	if err := s.store.DeleteEvent(userOf(r), r.PathValue("id")); err != nil {
 		apiSaveError(w, err)
 		return
 	}
@@ -121,9 +121,9 @@ func (s *server) apiDeleteEvent(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// apiExport returns all events as {"events": [...]}, ready to be imported again.
+// apiExport returns the user's events as {"events": [...]}, ready to be imported again.
 func (s *server) apiExport(w http.ResponseWriter, r *http.Request) {
-	evs, err := s.store.ListEvents()
+	evs, err := s.store.ListEvents(userOf(r))
 	if err != nil {
 		apiError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -153,7 +153,7 @@ func (s *server) apiImport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	replace := r.URL.Query().Get("mode") == "replace"
-	res, err := s.store.Import(evs, replace)
+	res, err := s.store.Import(userOf(r), evs, replace)
 	if err != nil {
 		apiSaveError(w, err)
 		return

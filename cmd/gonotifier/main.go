@@ -35,8 +35,8 @@ func main() {
 		os.Exit(1)
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
-	if cfg.NtfyToken == "" {
-		slog.Warn("NTFY_TOKEN not set — sending without auth; ntfy will reject this if access is deny-all")
+	for key, why := range config.Removed() {
+		slog.Warn("setting no longer used: "+key, "instead", why)
 	}
 
 	st, err := store.Open(cfg.DBPath)
@@ -60,12 +60,9 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	mux := http.NewServeMux()
-	web.Register(mux, cfg, st, sched)
-
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           logRequests(mux),
+		Handler:           logRequests(web.Handler(cfg, st, sched)),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
@@ -75,7 +72,7 @@ func main() {
 	go sched.Run(ctx)
 
 	go func() {
-		slog.Info("gonotifier listening", "port", cfg.Port, "db", cfg.DBPath, "export", cfg.ExportFile, "tz", cfg.TZ.String())
+		slog.Info("gonotifier listening", "port", cfg.Port, "db", cfg.DBPath, "export", cfg.ExportDir, "tz", cfg.TZ.String())
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("http server", "err", err)
 			stop()

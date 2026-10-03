@@ -145,6 +145,9 @@ main.container { padding-block: 1.75rem 4rem; }
 .brand { display: inline-flex; align-items: center; gap: .55rem; font-weight: 600; letter-spacing: -.01em; color: var(--text); text-decoration: none; }
 .brand:hover { color: var(--text); }
 .brand .icon { color: var(--accent); width: 1.2em; height: 1.2em; }
+.topbar-actions { display: flex; align-items: center; gap: .35rem; }
+.topbar-actions form { margin: 0; }
+.feed { display: flex; align-items: center; gap: .15rem; }
 
 /* ---------- Buttons ---------- */
 .btn {
@@ -349,6 +352,7 @@ dialog.modal[open] > article { animation: modal-in .2s cubic-bezier(.2, .8, .2, 
   dialog.modal[open] > article { animation: sheet-in .25s cubic-bezier(.2, .8, .2, 1); }
   @keyframes sheet-in { from { transform: translateY(40px); opacity: 0; } }
   .toast { left: 1rem; right: 1rem; bottom: 1rem; }
+  .user-name { display: none; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -361,3 +365,11 @@ dialog.modal[open] > article { animation: modal-in .2s cubic-bezier(.2, .8, .2, 
 .input-suffix input { flex: 1; min-width: 0; }
 .input-suffix span { font-size: .875rem; color: var(--muted); min-width: 3.5rem; }
 .row2 > .field { margin-bottom: 0; }
+
+/* ---------- Login ---------- */
+main.login { max-width: 380px; padding-top: 12vh; }
+.login .brand { margin-bottom: 1.25rem; font-size: 1.125rem; }
+.panel.login-panel { padding: 1.5rem; }
+.login-panel input { margin-bottom: 0; }
+.login-panel .btn { width: 100%; margin-top: .25rem; }
+.login-panel .hint { text-align: center; margin-top: .9rem; }

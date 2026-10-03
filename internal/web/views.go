@@ -9,6 +9,7 @@ import (
 
 	"github.com/sebibar/gonotifier/internal/clock"
 	"github.com/sebibar/gonotifier/internal/events"
+	"github.com/sebibar/gonotifier/internal/store"
 )
 
 type EventView struct {
@@ -44,11 +45,12 @@ type HistoryView struct {
 }
 
 type pageData struct {
+	Username  string
 	Upcoming  []UpcomingView
 	Events    []EventView
 	History   []HistoryView
 	Highlight string // ID of the event that was just added/edited
-	FeedPath  string // where the calendar feed is served (includes FEED_TOKEN if set)
+	FeedPath  string // the user's secret calendar feed URL
 }
 
 func isSoon(t, now time.Time) bool { return t.Sub(now) < 48*time.Hour }
@@ -153,12 +155,12 @@ func (s *server) buildEventViews(evs []events.Event, now time.Time) ([]EventView
 	return list, upcoming
 }
 
-func (s *server) buildPage(evs []events.Event, withHistory bool) pageData {
+func (s *server) buildPage(u store.User, evs []events.Event, withHistory bool) pageData {
 	now := clock.Now().In(s.cfg.TZ)
-	p := pageData{FeedPath: s.cfg.FeedPath()}
+	p := pageData{Username: u.Username, FeedPath: feedPath(u.FeedToken)}
 	p.Events, p.Upcoming = s.buildEventViews(evs, now)
 	if withHistory {
-		recs, err := s.store.RecentHistory(20)
+		recs, err := s.store.RecentHistory(u.Username, 20)
 		if err != nil {
 			slog.Error("load history", "err", err)
 		}
@@ -171,11 +173,15 @@ func (s *server) buildPage(evs []events.Event, withHistory bool) pageData {
 	return p
 }
 
-// page loads all events and builds the view.
-func (s *server) page(withHistory bool) (pageData, error) {
-	evs, err := s.store.ListEvents()
+// page loads the user's events and builds the view.
+func (s *server) page(user string, withHistory bool) (pageData, error) {
+	u, err := s.store.GetUser(user)
 	if err != nil {
 		return pageData{}, err
 	}
-	return s.buildPage(evs, withHistory), nil
+	evs, err := s.store.ListEvents(user)
+	if err != nil {
+		return pageData{}, err
+	}
+	return s.buildPage(u, evs, withHistory), nil
 }

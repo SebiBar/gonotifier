@@ -13,8 +13,8 @@ import (
 	"github.com/sebibar/gonotifier/internal/events"
 )
 
-// ErrNotFound is returned when no event has the requested ID.
-var ErrNotFound = errors.New("event not found")
+// ErrNotFound is returned when the requested event, user or session doesn't exist.
+var ErrNotFound = errors.New("not found")
 
 var reID = regexp.MustCompile(`^[a-z0-9]{1,32}$`)
 
@@ -24,7 +24,7 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-const eventColumns = `id, name, date, repeat, every, until, reminders, auto_remove, notify_time, topic, priority, tags`
+const eventColumns = `id, name, date, repeat, every, until, reminders, auto_remove, notify_time, topic, priority, tags, owner`
 
 type scanner interface{ Scan(...any) error }
 
@@ -33,7 +33,7 @@ func scanEvent(row scanner) (events.Event, error) {
 	var reminders string
 	var autoRemove sql.NullBool
 	if err := row.Scan(&e.ID, &e.Name, &e.Date, &e.Repeat, &e.Every, &e.Until, &reminders, &autoRemove,
-		&e.NotifyTime, &e.Topic, &e.Priority, &e.Tags); err != nil {
+		&e.NotifyTime, &e.Topic, &e.Priority, &e.Tags, &e.Owner); err != nil {
 		return e, err
 	}
 	if err := json.Unmarshal([]byte(reminders), &e.Reminders); err != nil {
@@ -46,9 +46,18 @@ func scanEvent(row scanner) (events.Event, error) {
 	return e, nil
 }
 
-// ListEvents returns all events in creation order.
-func (s *Store) ListEvents() ([]events.Event, error) {
-	rows, err := s.db.Query(`SELECT ` + eventColumns + ` FROM events ORDER BY created_at, rowid`)
+// ListEvents returns one user's events in creation order.
+func (s *Store) ListEvents(owner string) ([]events.Event, error) {
+	return s.queryEvents(`SELECT `+eventColumns+` FROM events WHERE owner = ? ORDER BY created_at, rowid`, owner)
+}
+
+// AllEvents returns every user's events in creation order (for the scheduler).
+func (s *Store) AllEvents() ([]events.Event, error) {
+	return s.queryEvents(`SELECT ` + eventColumns + ` FROM events ORDER BY created_at, rowid`)
+}
+
+func (s *Store) queryEvents(query string, args ...any) ([]events.Event, error) {
+	rows, err := s.db.Query(query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -64,21 +73,21 @@ func (s *Store) ListEvents() ([]events.Event, error) {
 	return out, rows.Err()
 }
 
-// GetEvent returns one event, or ErrNotFound.
-func (s *Store) GetEvent(id string) (events.Event, error) {
-	e, err := scanEvent(s.db.QueryRow(`SELECT `+eventColumns+` FROM events WHERE id = ?`, id))
+// GetEvent returns one of the user's events, or ErrNotFound.
+func (s *Store) GetEvent(owner, id string) (events.Event, error) {
+	e, err := scanEvent(s.db.QueryRow(`SELECT `+eventColumns+` FROM events WHERE id = ? AND owner = ?`, id, owner))
 	if errors.Is(err, sql.ErrNoRows) {
 		return e, ErrNotFound
 	}
 	return e, err
 }
 
-// CreateEvent normalizes, validates and stores a new event with a fresh ID.
+// CreateEvent normalizes, validates and stores a new event for the user, with a fresh ID.
 // Validation failures are returned as events.ValidationError.
-func (s *Store) CreateEvent(e events.Event) (events.Event, error) {
+func (s *Store) CreateEvent(owner string, e events.Event) (events.Event, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	existing, err := s.ListEvents()
+	existing, err := s.ListEvents(owner)
 	if err != nil {
 		return e, err
 	}
@@ -86,7 +95,7 @@ func (s *Store) CreateEvent(e events.Event) (events.Event, error) {
 	if errs := events.Validate(e, existing, ""); len(errs) > 0 {
 		return e, events.ValidationError(errs)
 	}
-	e.ID = newID()
+	e.ID, e.Owner = newID(), owner
 	if err := upsert(s.db, e); err != nil {
 		return e, err
 	}
@@ -94,14 +103,14 @@ func (s *Store) CreateEvent(e events.Event) (events.Event, error) {
 	return e, nil
 }
 
-// UpdateEvent replaces the event with the given ID, keeping the ID.
-func (s *Store) UpdateEvent(id string, e events.Event) (events.Event, error) {
+// UpdateEvent replaces the user's event with the given ID, keeping the ID.
+func (s *Store) UpdateEvent(owner, id string, e events.Event) (events.Event, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, err := s.GetEvent(id); err != nil {
+	if _, err := s.GetEvent(owner, id); err != nil {
 		return e, err
 	}
-	existing, err := s.ListEvents()
+	existing, err := s.ListEvents(owner)
 	if err != nil {
 		return e, err
 	}
@@ -109,7 +118,7 @@ func (s *Store) UpdateEvent(id string, e events.Event) (events.Event, error) {
 	if errs := events.Validate(e, existing, id); len(errs) > 0 {
 		return e, events.ValidationError(errs)
 	}
-	e.ID = id
+	e.ID, e.Owner = id, owner
 	if err := upsert(s.db, e); err != nil {
 		return e, err
 	}
@@ -117,11 +126,11 @@ func (s *Store) UpdateEvent(id string, e events.Event) (events.Event, error) {
 	return e, nil
 }
 
-// DeleteEvent removes an event. Its sent history is kept for the history view.
-func (s *Store) DeleteEvent(id string) error {
+// DeleteEvent removes one of the user's events. Its sent history is kept for the history view.
+func (s *Store) DeleteEvent(owner, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	res, err := s.db.Exec(`DELETE FROM events WHERE id = ?`, id)
+	res, err := s.db.Exec(`DELETE FROM events WHERE id = ? AND owner = ?`, id, owner)
 	if err != nil {
 		return err
 	}
@@ -139,15 +148,19 @@ type ImportResult struct {
 	Deleted int `json:"deleted"`
 }
 
-// Import adds or updates events in one transaction: an event whose id matches an
-// existing one replaces it, anything else is created (keeping a valid given id).
-// With replace, events missing from the import are deleted. Nothing is written
-// if any event is invalid.
-func (s *Store) Import(incoming []events.Event, replace bool) (ImportResult, error) {
+// Import adds or updates the user's events in one transaction: an event whose id
+// matches one of theirs replaces it, anything else is created (keeping a valid given
+// id, unless another user's event has it). With replace, their events missing from
+// the import are deleted. Nothing is written if any event is invalid.
+func (s *Store) Import(owner string, incoming []events.Event, replace bool) (ImportResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var res ImportResult
-	current, err := s.ListEvents()
+	current, err := s.ListEvents(owner)
+	if err != nil {
+		return res, err
+	}
+	taken, err := s.otherOwnersIDs(owner)
 	if err != nil {
 		return res, err
 	}
@@ -174,9 +187,10 @@ func (s *Store) Import(incoming []events.Event, replace bool) (ImportResult, err
 			errs = append(errs, label+" id may only contain a-z and 0-9.")
 			continue
 		}
-		if e.ID == "" {
+		if e.ID == "" || taken[e.ID] {
 			e.ID = newID()
 		}
+		e.Owner = owner
 		if kept[e.ID] {
 			errs = append(errs, label+" duplicate id "+e.ID+".")
 			continue
@@ -209,7 +223,7 @@ func (s *Store) Import(incoming []events.Event, replace bool) (ImportResult, err
 	if replace {
 		for _, e := range current {
 			if !kept[e.ID] {
-				if _, err := tx.Exec(`DELETE FROM events WHERE id = ?`, e.ID); err != nil {
+				if _, err := tx.Exec(`DELETE FROM events WHERE id = ? AND owner = ?`, e.ID, owner); err != nil {
 					return res, err
 				}
 				res.Deleted++
@@ -230,10 +244,29 @@ func (s *Store) Import(incoming []events.Event, replace bool) (ImportResult, err
 	return res, nil
 }
 
+// otherOwnersIDs returns the IDs of events that belong to other users.
+func (s *Store) otherOwnersIDs(owner string) (map[string]bool, error) {
+	rows, err := s.db.Query(`SELECT id FROM events WHERE owner != ?`, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	ids := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids[id] = true
+	}
+	return ids, rows.Err()
+}
+
 type execer interface {
 	Exec(string, ...any) (sql.Result, error)
 }
 
+// upsert writes e. An existing row is only replaced if it has the same owner.
 func upsert(db execer, e events.Event) error {
 	reminders, _ := json.Marshal(e.Reminders)
 	var autoRemove any
@@ -241,13 +274,14 @@ func upsert(db execer, e events.Event) error {
 		autoRemove = *e.AutoRemove
 	}
 	_, err := db.Exec(`INSERT INTO events (`+eventColumns+`, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name, date = excluded.date, repeat = excluded.repeat, every = excluded.every,
 			until = excluded.until, reminders = excluded.reminders, auto_remove = excluded.auto_remove,
 			notify_time = excluded.notify_time, topic = excluded.topic, priority = excluded.priority,
-			tags = excluded.tags`,
+			tags = excluded.tags
+		WHERE events.owner = excluded.owner`,
 		e.ID, e.Name, e.Date, e.Repeat, e.Every, e.Until, string(reminders), autoRemove,
-		e.NotifyTime, e.Topic, e.Priority, e.Tags, clock.Now().UTC().Format(dbTimeFormat))
+		e.NotifyTime, e.Topic, e.Priority, e.Tags, e.Owner, clock.Now().UTC().Format(dbTimeFormat))
 	return err
 }

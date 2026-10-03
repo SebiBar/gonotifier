@@ -7,6 +7,7 @@ import (
 
 	"github.com/sebibar/gonotifier/internal/events"
 	"github.com/sebibar/gonotifier/internal/store"
+	"github.com/sebibar/gonotifier/internal/testutil"
 )
 
 var jsonHeaders = map[string]string{"Content-Type": "application/json"}
@@ -60,7 +61,7 @@ func TestAPICreate(t *testing.T) {
 	if created.ID == "" || created.ID == "ignored" || created.Repeat != "monthly" || created.Next == "" {
 		t.Errorf("created = %+v", created)
 	}
-	if _, err := env.Store.GetEvent(created.ID); err != nil {
+	if _, err := env.Store.GetEvent(testutil.User, created.ID); err != nil {
 		t.Errorf("not stored: %v", err)
 	}
 	if rr := do(mux, "POST", "/api/events", body, jsonHeaders); rr.Code != 400 {
@@ -80,7 +81,7 @@ func TestAPIUpdate_RoundTripsGetOutput(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
 	}
-	if e, _ := env.Store.GetEvent(id); e.Name != "Dentist (moved)" {
+	if e, _ := env.Store.GetEvent(testutil.User, id); e.Name != "Dentist (moved)" {
 		t.Errorf("not updated: %+v", e)
 	}
 	if rr := do(mux, "PUT", "/api/events/missing", edited, jsonHeaders); rr.Code != 404 {
