@@ -50,6 +50,7 @@ All settings are environment variables. Only `NTFY_URL` is required.
 | `DEFAULT_NOTIFY_TIME` | `09:00` | When day-based reminders fire |
 | `CATCHUP_WINDOW` | `24h` | How late a missed reminder may still be sent |
 | `DB_PATH` | `/data/gonotifier.db` | SQLite database (events and sent reminders) |
+| `FEED_URL` | — | Public address the calendar feed is reachable on, e.g. `https://cal.example.com`, if it differs from the one you open the UI on. The UI then shows feed links there |
 | `EXPORT_DIR` | `exports` next to the database | Read-only JSON copy of each user's events, `<username>.json`; `off` disables it |
 | `PORT` | `8080` | HTTP port |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn` or `error` |
@@ -118,7 +119,8 @@ the password: anyone who has it can read your event names. If it leaks, replace 
 next to the link (calendars subscribed to the old one then need the new one).
 
 To subscribe in Google Calendar: **Settings → Add calendar → From URL**, and paste the link. The URL
-must be reachable from the internet; Google refreshes it every 12–24 hours.
+must be reachable from the internet; Google refreshes it every 12–24 hours. If only the feed is public,
+on another hostname than the UI, set `FEED_URL` so the link already points there.
 
 ## Data and backups
 

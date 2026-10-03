@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -19,6 +20,7 @@ type Config struct {
 	NtfyURL           string // also where users log in: their username and password are checked by ntfy
 	DBPath            string
 	ExportDir         string // read-only JSON snapshot of each user's events, <username>.json; "" = disabled
+	FeedURL           string // public base URL the UI shows calendar feed links on, e.g. https://cal.example.com; "" = this server
 	TZ                *time.Location
 	CatchupWindow     time.Duration
 	DefaultNotifyTime events.TimeOnly
@@ -39,6 +41,10 @@ func Load() (*Config, error) {
 	cfg.ExportDir = envOr("EXPORT_DIR", filepath.Join(filepath.Dir(cfg.DBPath), "exports"))
 	if cfg.ExportDir == "off" {
 		cfg.ExportDir = ""
+	}
+	cfg.FeedURL = strings.TrimRight(envOr("FEED_URL", ""), "/")
+	if u, err := url.Parse(cfg.FeedURL); cfg.FeedURL != "" && (err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "") {
+		errs = append(errs, errors.New("FEED_URL must be an http(s) URL, e.g. https://cal.example.com"))
 	}
 
 	loc, err := time.LoadLocation(envOr("TZ", "UTC"))

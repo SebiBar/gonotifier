@@ -259,5 +259,5 @@ func (s *server) resetFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setTrigger(w, false, "New calendar link created", "success")
-	render(w, r, http.StatusOK, FeedLink(feedPath(token)))
+	render(w, r, http.StatusOK, FeedLink(s.feedURL(token)))
 }

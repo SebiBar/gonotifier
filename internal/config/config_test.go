@@ -33,6 +33,20 @@ func TestLoad_ExportDirOff(t *testing.T) {
 	}
 }
 
+func TestLoad_FeedURL(t *testing.T) {
+	t.Setenv("NTFY_URL", "http://ntfy:80")
+	t.Setenv("FEED_URL", "https://cal.example.com/")
+	if cfg, err := Load(); err != nil || cfg.FeedURL != "https://cal.example.com" {
+		t.Errorf("FeedURL = %q, %v", cfg.FeedURL, err)
+	}
+	for _, bad := range []string{"cal.example.com", "ftp://cal.example.com", "https://"} {
+		t.Setenv("FEED_URL", bad)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "FEED_URL") {
+			t.Errorf("FEED_URL=%q: err = %v", bad, err)
+		}
+	}
+}
+
 func TestRemoved(t *testing.T) {
 	t.Setenv("FEED_TOKEN", "0123456789abcdef")
 	t.Setenv("NTFY_TOKEN", "")

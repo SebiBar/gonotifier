@@ -160,9 +160,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 // ---------- feed + health ----------
 
-// feedPath is where a user's calendar feed is served. The URL itself is the secret:
-// calendar apps fetch it without logging in.
-func feedPath(token string) string { return "/feed/" + token + ".ics" }
+// feedURL is where a user's calendar feed is served (on FEED_URL if set, so the UI can show
+// the public address). The URL itself is the secret: calendar apps fetch it without logging in.
+func (s *server) feedURL(token string) string { return s.cfg.FeedURL + "/feed/" + token + ".ics" }
 
 // feed serves the iCal feed of the user whose feed token is in the URL; anything else is a 404.
 func (s *server) feed(w http.ResponseWriter, r *http.Request) {

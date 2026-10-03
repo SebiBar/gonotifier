@@ -305,6 +305,19 @@ func TestFeed(t *testing.T) {
 	}
 }
 
+func TestFeedURL_ShownOnPublicHost(t *testing.T) {
+	env, mux, _ := newTestMux(t, sampleEvents)
+	env.Cfg.FeedURL = "https://cal.example.com"
+	u, _ := env.Store.GetUser(testutil.User)
+	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `href="https://cal.example.com/feed/`+u.FeedToken+`.ics"`) {
+		t.Error("dashboard doesn't link to the feed on FEED_URL")
+	}
+	rr := do(mux, "POST", "/feed/reset", "", map[string]string{"HX-Request": "true"})
+	if !strings.Contains(rr.Body.String(), `href="https://cal.example.com/feed/`) {
+		t.Errorf("reset doesn't use FEED_URL: %s", rr.Body.String())
+	}
+}
+
 func TestHealth(t *testing.T) {
 	_, mux, _ := newTestMux(t, sampleEvents)
 	for _, path := range []string{"/health", "/api/health"} {

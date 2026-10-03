@@ -50,7 +50,7 @@ type pageData struct {
 	Events    []EventView
 	History   []HistoryView
 	Highlight string // ID of the event that was just added/edited
-	FeedPath  string // the user's secret calendar feed URL
+	FeedURL   string // the user's secret calendar feed URL
 }
 
 func isSoon(t, now time.Time) bool { return t.Sub(now) < 48*time.Hour }
@@ -157,7 +157,7 @@ func (s *server) buildEventViews(evs []events.Event, now time.Time) ([]EventView
 
 func (s *server) buildPage(u store.User, evs []events.Event, withHistory bool) pageData {
 	now := clock.Now().In(s.cfg.TZ)
-	p := pageData{Username: u.Username, FeedPath: feedPath(u.FeedToken)}
+	p := pageData{Username: u.Username, FeedURL: s.feedURL(u.FeedToken)}
 	p.Events, p.Upcoming = s.buildEventViews(evs, now)
 	if withHistory {
 		recs, err := s.store.RecentHistory(u.Username, 20)
