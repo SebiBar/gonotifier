@@ -76,7 +76,10 @@ All settings are environment variables. Only `NTFY_URL` is required.
   `0m` fires at the event's time, for simple reminders like taking medicine.
 - **All-day events:** `Nd` fires N days before, at the notify time (`0d` = on the day).
 
-On a repeating event, a reminder must be shorter than the repeat interval.
+An event can have up to 10 reminders. On a repeating event, each must be shorter than the repeat
+interval. When you create an event or change its date or reminders, nothing may already be in the past:
+not the event itself, nor a reminder that would have been sent already. (Imports aren't checked, so a
+backup with old events can be restored.)
 
 **Repeats** keep the same day of the month; on the 31st they fall on the last day of shorter months.
 

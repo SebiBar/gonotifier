@@ -109,6 +109,15 @@ func (e Event) periodDays() int {
 	return 0
 }
 
+// DescribeInterval renders how often the event repeats: "every day", "every 3 months".
+func (e Event) DescribeInterval() string {
+	unit := map[string]string{Daily: "day", Weekly: "week", Monthly: "month", Yearly: "year"}[e.Repeat]
+	if n := e.Interval(); n > 1 {
+		return fmt.Sprintf("every %d %ss", n, unit)
+	}
+	return "every " + unit
+}
+
 // DescribeRepeat renders the rule: "Daily", "Every 3 months", "Yearly until Dec 31, 2027".
 func (e Event) DescribeRepeat() string {
 	if !e.IsRepeating() {

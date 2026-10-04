@@ -3,11 +3,15 @@ package events
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 )
+
+// MaxReminders is how many reminders an event may have.
+const MaxReminders = 10
 
 var (
 	validRepeats    = map[string]bool{Once: true, Daily: true, Weekly: true, Monthly: true, Yearly: true}
@@ -121,23 +125,25 @@ func Validate(e Event, existing []Event, selfID string) []string {
 
 	if len(e.Reminders) == 0 {
 		errs = append(errs, "Pick at least one reminder.")
+	} else if len(e.Reminders) > MaxReminders {
+		errs = append(errs, fmt.Sprintf("Pick at most %d reminders.", MaxReminders))
 	}
 	for _, rem := range e.Reminders {
 		dur, unit, err := ParseOffset(rem)
 		if err != nil {
-			errs = append(errs, fmt.Sprintf("Invalid reminder %q (use e.g. 5d, 12h, 30m).", rem))
+			errs = append(errs, fmt.Sprintf("Invalid reminder %q: use a number of minutes, hours or days, e.g. 30m, 2h, 3d.", rem))
 			continue
 		}
 		if unit != "d" && !e.HasTime() && dateErr == nil {
-			errs = append(errs, fmt.Sprintf("Reminder %s: all-day events remind in days (e.g. 0d, 1d). Give the event a time to remind hours or minutes before.", rem))
+			errs = append(errs, fmt.Sprintf("Reminder %q: all-day events remind in days (e.g. 0d, 1d). Give the event a time to remind hours or minutes before.", ReminderLabel(rem)))
 			continue
 		}
 		// A reminder must come after the previous occurrence, or it would fire "for"
 		// the wrong one (e.g. a 7-day reminder on a daily event).
 		if p := e.periodDays(); p > 0 && validRepeats[e.Repeat] {
 			if dur >= time.Duration(p)*24*time.Hour {
-				errs = append(errs, fmt.Sprintf("Reminder %s is as long as the repeat interval (%s); pick a shorter one.",
-					rem, strings.ToLower(e.DescribeRepeat())))
+				errs = append(errs, fmt.Sprintf("Reminder %q must be shorter than the repeat interval (%s).",
+					ReminderLabel(rem), e.DescribeInterval()))
 			}
 		}
 	}
@@ -157,6 +163,41 @@ func Validate(e Event, existing []Event, selfID string) []string {
 		if other.ID != selfID && other.Name == e.Name && other.Date == e.Date {
 			errs = append(errs, "An event with this name and date already exists.")
 			break
+		}
+	}
+	return errs
+}
+
+// CheckTiming reports what is already in the past when saving e at now: the date of a
+// one-time event, the end of a repeat, and reminders that should already have fired.
+// prev is the stored event when editing (nil when creating); only what changed is
+// checked, so an event that has passed can still be edited and a reminder that was
+// already sent can stay. Run it after Validate passes.
+func CheckTiming(e Event, prev *Event, now time.Time, loc *time.Location, def TimeOnly) []string {
+	dateChanged := prev == nil || prev.Date != e.Date || prev.Repeat != e.Repeat
+	if e.IsRepeating() {
+		untilChanged := dateChanged || prev.Until != e.Until || prev.Every != e.Every
+		if _, ok := e.NextOccurrence(now, loc); !ok && untilChanged {
+			return []string{"The repeat has already ended: pick a later Until date."}
+		}
+		return nil // every later occurrence gets its reminders (each is shorter than the interval)
+	}
+
+	occ, ok := e.NextOccurrence(now, loc)
+	if !ok {
+		if dateChanged {
+			return []string{"This event has already passed."}
+		}
+		return nil
+	}
+	var errs []string
+	for _, rem := range e.Reminders {
+		if !dateChanged && slices.Contains(prev.Reminders, rem) {
+			continue
+		}
+		if fire, err := FireTime(e, rem, occ, def); err == nil && fire.Before(now) {
+			errs = append(errs, fmt.Sprintf("Reminder %q would have been sent %s, which has already passed.",
+				ReminderLabel(rem), fire.Format("Jan 2 at 15:04")))
 		}
 	}
 	return errs

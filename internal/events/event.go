@@ -118,10 +118,12 @@ func ParseOffset(s string) (time.Duration, string, error) {
 func HumanOffset(dur time.Duration, unit string) string {
 	var n int
 	var word string
-	switch unit {
-	case "d":
-		n, word = int(dur/(24*time.Hour)), "day"
-	case "h":
+	switch days := int(dur / (24 * time.Hour)); {
+	case unit == "d" && days > 0 && days%7 == 0:
+		n, word = days/7, "week" // like the form's "1 week", "2 weeks"
+	case unit == "d":
+		n, word = days, "day"
+	case unit == "h":
 		n, word = int(dur/time.Hour), "hour"
 	default:
 		n, word = int(dur/time.Minute), "minute"
@@ -130,6 +132,21 @@ func HumanOffset(dur time.Duration, unit string) string {
 		return "1 " + word
 	}
 	return fmt.Sprintf("%d %ss", n, word)
+}
+
+// ReminderLabel describes a reminder the way the form does: "At time", "On the day",
+// "3 days before", "30 minutes before". Invalid offsets are returned as they are.
+func ReminderLabel(offset string) string {
+	dur, unit, err := ParseOffset(offset)
+	switch {
+	case err != nil:
+		return offset
+	case dur == 0 && unit == "d":
+		return "On the day"
+	case dur == 0:
+		return "At time"
+	}
+	return HumanOffset(dur, unit) + " before"
 }
 
 // FireTime calculates when a reminder for the occurrence at occ fires, the way calendar apps do:

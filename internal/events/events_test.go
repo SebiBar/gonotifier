@@ -318,3 +318,99 @@ func TestNormalize_ZeroReminders(t *testing.T) {
 		t.Errorf("all-day: reminders %v", allDay.Reminders)
 	}
 }
+
+func TestValidate_Messages(t *testing.T) {
+	msgs := func(e events.Event) string { return strings.Join(events.Validate(e, nil, ""), " | ") }
+	cases := []struct {
+		e    events.Event
+		want string
+	}{
+		// Longer than the interval, and just as long: same message.
+		{events.Event{Name: "A", Date: "2026-12-01T10:00", Repeat: events.Daily, Reminders: []string{"3d"}},
+			`Reminder "3 days before" must be shorter than the repeat interval (every day).`},
+		{events.Event{Name: "A", Date: "2026-12-01", Repeat: events.Weekly, Reminders: []string{"7d"}},
+			`Reminder "1 week before" must be shorter than the repeat interval (every week).`},
+		// The repeat's end date isn't part of it (it used to come out as "weekly until dec 31, 2027").
+		{events.Event{Name: "A", Date: "2026-12-01", Repeat: events.Monthly, Every: 2, Until: "2027-12-31", Reminders: []string{"90d"}},
+			`Reminder "90 days before" must be shorter than the repeat interval (every 2 months).`},
+		{events.Event{Name: "A", Date: "2026-12-01", Reminders: []string{"2h"}},
+			`Reminder "2 hours before": all-day events remind in days`},
+		{events.Event{Name: "A", Date: "2026-12-01", Reminders: []string{"5x"}},
+			`Invalid reminder "5x": use a number of minutes, hours or days, e.g. 30m, 2h, 3d.`},
+		{events.Event{Name: "A", Date: "2026-12-01", Reminders: []string{"0d", "1d", "2d", "3d", "4d", "5d", "6d", "7d", "8d", "9d", "10d"}},
+			"Pick at most 10 reminders."},
+	}
+	for _, c := range cases {
+		if got := msgs(c.e); !strings.Contains(got, c.want) {
+			t.Errorf("%+v:\n got %s\nwant %s", c.e, got, c.want)
+		}
+	}
+}
+
+func TestReminderLabel(t *testing.T) {
+	for off, want := range map[string]string{
+		"0m": "At time", "0d": "On the day", "30m": "30 minutes before", "1h": "1 hour before",
+		"1d": "1 day before", "3d": "3 days before", "7d": "1 week before", "14d": "2 weeks before",
+		"30d": "30 days before", "bogus": "bogus",
+	} {
+		if got := events.ReminderLabel(off); got != want {
+			t.Errorf("ReminderLabel(%q) = %q, want %q", off, got, want)
+		}
+	}
+}
+
+func TestCheckTiming(t *testing.T) {
+	now := at(2026, 10, 2, 10, 0) // Fri Oct 2, 10:00
+	check := func(e events.Event, prev *events.Event) string {
+		events.Normalize(&e)
+		return strings.Join(events.CheckTiming(e, prev, now, loc, nineAM), " | ")
+	}
+	tomorrow := events.Event{Name: "Dentist", Date: "2026-10-03T09:00", Reminders: []string{"1h"}}
+	cases := []struct {
+		name string
+		e    events.Event
+		prev *events.Event
+		want string // "" = no error
+	}{
+		{"upcoming, reminder ahead", tomorrow, nil, ""},
+		{"reminder before now", events.Event{Name: "A", Date: "2026-10-03T09:00", Reminders: []string{"3d"}}, nil,
+			`Reminder "3 days before" would have been sent Sep 30 at 09:00, which has already passed.`},
+		{"one of several reminders past", events.Event{Name: "A", Date: "2026-10-03T09:00", Reminders: []string{"1h", "1d"}}, nil,
+			`Reminder "1 day before"`},
+		{"at time, later today", events.Event{Name: "A", Date: "2026-10-02T20:00", Reminders: []string{"0m"}}, nil, ""},
+		{"date passed", events.Event{Name: "A", Date: "2026-10-01T09:00", Reminders: []string{"1h"}}, nil, "This event has already passed."},
+		{"earlier today", events.Event{Name: "A", Date: "2026-10-02T08:00", Reminders: []string{"0m"}}, nil, "This event has already passed."},
+		{"all-day today is still on", events.Event{Name: "A", Date: "2026-10-02", Reminders: []string{"0d"}}, nil,
+			`Reminder "On the day" would have been sent Oct 2 at 09:00`},
+		{"all-day today, later notify time", events.Event{Name: "A", Date: "2026-10-02", NotifyTime: "18:00", Reminders: []string{"0d"}}, nil, ""},
+		{"daily repeat started in the past", events.Event{Name: "A", Date: "2026-01-01T08:00", Repeat: events.Daily, Reminders: []string{"0m"}}, nil, ""},
+		{"repeat already ended", events.Event{Name: "A", Date: "2026-01-01", Repeat: events.Weekly, Until: "2026-09-01", Reminders: []string{"1d"}}, nil,
+			"The repeat has already ended"},
+
+		// Editing: only what changed is checked.
+		{"rename a kept event that passed",
+			events.Event{Name: "Renamed", Date: "2026-09-01T09:00", Reminders: []string{"1d"}},
+			&events.Event{Name: "Old", Date: "2026-09-01T09:00", Reminders: []string{"1d"}}, ""},
+		{"move an event into the past",
+			events.Event{Name: "A", Date: "2026-09-01T09:00", Reminders: []string{"1d"}},
+			&events.Event{Name: "A", Date: "2026-11-01T09:00", Reminders: []string{"1d"}}, "This event has already passed."},
+		{"keep a reminder that was already sent",
+			events.Event{Name: "Dentist (moved room)", Date: "2026-10-03T09:00", Reminders: []string{"1h", "1d"}},
+			&events.Event{Name: "Dentist", Date: "2026-10-03T09:00", Reminders: []string{"1h", "1d"}}, ""},
+		{"add a reminder that is already past",
+			events.Event{Name: "Dentist", Date: "2026-10-03T09:00", Reminders: []string{"1h", "2d"}},
+			&events.Event{Name: "Dentist", Date: "2026-10-03T09:00", Reminders: []string{"1h"}}, `Reminder "2 days before"`},
+		{"change the date: all reminders count again",
+			events.Event{Name: "Dentist", Date: "2026-10-02T11:00", Reminders: []string{"1d"}},
+			&events.Event{Name: "Dentist", Date: "2026-10-05T11:00", Reminders: []string{"1d"}}, `Reminder "1 day before"`},
+		{"rename a repeat that has ended",
+			events.Event{Name: "Renamed", Date: "2026-01-01", Repeat: events.Weekly, Until: "2026-09-01", Reminders: []string{"1d"}},
+			&events.Event{Name: "Old", Date: "2026-01-01", Repeat: events.Weekly, Until: "2026-09-01", Reminders: []string{"1d"}}, ""},
+	}
+	for _, c := range cases {
+		got := check(c.e, c.prev)
+		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
+			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
+		}
+	}
+}

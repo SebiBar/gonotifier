@@ -28,7 +28,9 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/sebibar/gonotifier/internal/clock"
 	"github.com/sebibar/gonotifier/internal/config"
+	"github.com/sebibar/gonotifier/internal/events"
 	"github.com/sebibar/gonotifier/internal/ical"
 	"github.com/sebibar/gonotifier/internal/notify"
 	"github.com/sebibar/gonotifier/internal/store"
@@ -205,4 +207,26 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 		resp["next_reminder"] = t.In(s.cfg.TZ).Format(time.RFC3339)
 	}
 	writeJSON(w, status, resp)
+}
+
+// checkTiming rejects saving something that is already in the past (see events.CheckTiming).
+// editID is the event being edited, or "" when creating. Imports skip it, so old events
+// can be restored from a backup.
+func (s *server) checkTiming(user, editID string, e events.Event) error {
+	events.Normalize(&e)
+	if len(events.Validate(e, nil, "")) > 0 {
+		return nil // the store reports those
+	}
+	var prev *events.Event
+	if editID != "" {
+		p, err := s.store.GetEvent(user, editID)
+		if err != nil {
+			return err
+		}
+		prev = &p
+	}
+	if errs := events.CheckTiming(e, prev, clock.Now().In(s.cfg.TZ), s.cfg.TZ, s.cfg.DefaultNotifyTime); len(errs) > 0 {
+		return events.ValidationError(errs)
+	}
+	return nil
 }

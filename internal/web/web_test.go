@@ -405,3 +405,56 @@ func TestForm_RemindersFollowTheEventType(t *testing.T) {
 		t.Errorf("hours on all-day accepted: %s", rr.Body.String())
 	}
 }
+
+func TestSave_RejectsWhatIsAlreadyPast(t *testing.T) {
+	// Clock: Fri Oct 2, 10:00.
+	env, mux, sched := newTestMux(t, "")
+
+	// Form: an event tomorrow with a "3 days before" reminder.
+	form := url.Values{"name": {"Dentist"}, "date": {"2026-10-03"}, "time": {"09:00"}, "reminders": {"1h"}, "custom_reminders": {"3d"}}
+	rr := do(mux, "POST", "/events", form.Encode(), formHeaders)
+	if body := rr.Body.String(); rr.Header().Get("HX-Retarget") != "#dialog-content" ||
+		!strings.Contains(body, "Reminder &#34;3 days before&#34; would have been sent Sep 30 at 09:00, which has already passed.") {
+		t.Errorf("past reminder accepted or unclear: %s", body)
+	}
+	// Form: an event that already happened.
+	form = url.Values{"name": {"Breakfast"}, "date": {"2026-10-02"}, "time": {"08:00"}, "reminders": {"0m"}}
+	if body := do(mux, "POST", "/events", form.Encode(), formHeaders).Body.String(); !strings.Contains(body, "This event has already passed.") {
+		t.Errorf("past event accepted: %s", body)
+	}
+	// API: same rules.
+	rr = do(mux, "POST", "/api/events", `{"name":"Dentist","date":"2026-10-03T09:00","reminders":["3d"]}`, jsonHeaders)
+	if rr.Code != 400 || !strings.Contains(rr.Body.String(), "already passed") {
+		t.Errorf("API accepted a past reminder: %d %s", rr.Code, rr.Body.String())
+	}
+	if len(env.Names(t)) != 0 || sched.wakes.Load() != 0 {
+		t.Error("rejected input was saved")
+	}
+
+	// Imports skip the check, so a backup with old events can be restored...
+	rr = do(mux, "POST", "/api/import", `[{"name":"Last year's trip","date":"2025-07-01","reminders":["1d"],"auto_remove":false}]`, jsonHeaders)
+	if rr.Code != 200 {
+		t.Fatalf("import of a past event rejected: %d %s", rr.Code, rr.Body.String())
+	}
+	// ...and a kept event that has passed can still be edited, as long as its date stays.
+	id := env.ID(t, "Last year's trip")
+	form = url.Values{"name": {"Trip to Rome"}, "date": {"2025-07-01"}, "reminders": {"1d"}}
+	if rr := do(mux, "PUT", "/events/"+id, form.Encode(), formHeaders); rr.Header().Get("HX-Retarget") != "" {
+		t.Errorf("renaming a kept past event rejected: %s", rr.Body.String())
+	}
+	if rr := do(mux, "PUT", "/api/events/"+id, `{"name":"Trip to Rome","date":"2025-07-02","reminders":["1d"]}`, jsonHeaders); rr.Code != 400 {
+		t.Errorf("moving an event to another past date accepted: %d", rr.Code)
+	}
+	if rr := do(mux, "PUT", "/api/events/missing", `{"name":"X","date":"2026-12-01","reminders":["1d"]}`, jsonHeaders); rr.Code != 404 {
+		t.Errorf("update of a missing event: %d", rr.Code)
+	}
+}
+
+func TestRepeatIntervalMessage(t *testing.T) {
+	_, mux, _ := newTestMux(t, "")
+	form := url.Values{"name": {"Pills"}, "date": {"2026-10-03"}, "time": {"08:00"}, "repeat": {"daily"}, "custom_reminders": {"3d"}}
+	body := do(mux, "POST", "/events", form.Encode(), formHeaders).Body.String()
+	if !strings.Contains(body, "Reminder &#34;3 days before&#34; must be shorter than the repeat interval (every day).") {
+		t.Errorf("unclear message: %s", body)
+	}
+}

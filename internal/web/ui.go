@@ -202,10 +202,12 @@ func (s *server) submitForm(w http.ResponseWriter, r *http.Request, editID strin
 	user := userOf(r)
 	e := eventFromForm(r)
 	var saved events.Event
-	var err error
-	if editID == "" {
+	err := s.checkTiming(user, editID, e)
+	switch {
+	case err != nil:
+	case editID == "":
 		saved, err = s.store.CreateEvent(user, e)
-	} else {
+	default:
 		saved, err = s.store.UpdateEvent(user, editID, e)
 	}
 

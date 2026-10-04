@@ -92,3 +92,10 @@ func TestFormat_AtTime(t *testing.T) {
 		t.Errorf("Format = %q %q %q", title, msg, tags)
 	}
 }
+
+func TestFormat_WeeksLikeTheForm(t *testing.T) {
+	e := events.Event{Name: "Passport renewal", Date: "2026-11-20"}
+	if _, msg, _ := Format(e, "14d", time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)); msg != "Passport renewal is in 2 weeks (Nov 20)" {
+		t.Errorf("message = %q", msg)
+	}
+}

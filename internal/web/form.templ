@@ -73,7 +73,7 @@ templ Form(fd formData) {
 					<span class="field-label">Every</span>
 					<div class="input-suffix">
 						<input type="number" name="every" min="1" max="1000" placeholder="1" x-model="every"/>
-						<span x-text="{daily: 'days', weekly: 'weeks', monthly: 'months', yearly: 'years'}[repeat]"></span>
+						<span x-text="{daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year'}[repeat] + ((+every || 1) > 1 ? 's' : '')"></span>
 					</div>
 				</label>
 				<label class="field">
