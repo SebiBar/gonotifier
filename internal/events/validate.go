@@ -56,12 +56,24 @@ func Normalize(e *Event) {
 		e.Until = ""
 	}
 	e.Reminders = SplitReminders(strings.Join(e.Reminders, ","))
+	for i, rem := range e.Reminders {
+		if dur, _, err := ParseOffset(rem); err == nil && dur == 0 {
+			e.Reminders[i] = "0m" // "at the time": 0d, 0h and 0m all mean the same
+			if !e.HasTime() {
+				e.Reminders[i] = "0d" // "on the day"
+			}
+		}
+	}
+	e.Reminders = SplitReminders(strings.Join(e.Reminders, ","))
 	sort.SliceStable(e.Reminders, func(i, j int) bool {
 		a, _, _ := ParseOffset(e.Reminders[i])
 		b, _, _ := ParseOffset(e.Reminders[j])
 		return a < b
 	})
 	e.NotifyTime = strings.TrimSpace(e.NotifyTime)
+	if e.HasTime() {
+		e.NotifyTime = "" // only all-day events use it
+	}
 	e.Topic = strings.TrimSpace(e.Topic)
 	e.Tags = strings.TrimSpace(e.Tags)
 	e.Priority = strings.ToLower(strings.TrimSpace(e.Priority))
@@ -116,14 +128,14 @@ func Validate(e Event, existing []Event, selfID string) []string {
 			errs = append(errs, fmt.Sprintf("Invalid reminder %q (use e.g. 5d, 12h, 30m).", rem))
 			continue
 		}
+		if unit != "d" && !e.HasTime() && dateErr == nil {
+			errs = append(errs, fmt.Sprintf("Reminder %s: all-day events remind in days (e.g. 0d, 1d). Give the event a time to remind hours or minutes before.", rem))
+			continue
+		}
 		// A reminder must come after the previous occurrence, or it would fire "for"
 		// the wrong one (e.g. a 7-day reminder on a daily event).
 		if p := e.periodDays(); p > 0 && validRepeats[e.Repeat] {
-			lead := dur
-			if unit == "d" {
-				lead = time.Duration(dur/(24*time.Hour)) * 24 * time.Hour
-			}
-			if lead >= time.Duration(p)*24*time.Hour {
+			if dur >= time.Duration(p)*24*time.Hour {
 				errs = append(errs, fmt.Sprintf("Reminder %s is as long as the repeat interval (%s); pick a shorter one.",
 					rem, strings.ToLower(e.DescribeRepeat())))
 			}

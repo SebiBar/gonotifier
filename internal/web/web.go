@@ -186,7 +186,7 @@ func (s *server) feed(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 	w.Header().Set("Content-Disposition", `inline; filename="gonotifier.ics"`)
-	w.Write([]byte(ical.Generate(evs, s.cfg.TZ)))
+	w.Write([]byte(ical.Generate(evs, s.cfg.TZ, s.cfg.DefaultNotifyTime)))
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {

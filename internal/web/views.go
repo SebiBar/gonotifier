@@ -97,6 +97,21 @@ func formatDate(e events.Event, t time.Time) string {
 	return t.Format(layout)
 }
 
+// reminderLabels shows reminders as stored ("30m", "1d"), except the ones without an offset.
+func reminderLabels(e events.Event) []string {
+	out := make([]string, 0, len(e.Reminders))
+	for _, r := range e.Reminders {
+		switch {
+		case r == "0m":
+			r = "at time"
+		case r == "0d":
+			r = "on the day"
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 func typeOf(e events.Event) (icon, label string) {
 	switch {
 	case e.IsRepeating():
@@ -116,7 +131,7 @@ func (s *server) buildEventViews(evs []events.Event, now time.Time) ([]EventView
 		icon, label := typeOf(e)
 		v := EventView{
 			ID: e.ID, Name: e.Name, TypeIcon: icon, TypeLabel: label, Repeating: e.IsRepeating(),
-			Reminders: e.Reminders, Priority: e.Priority, Next: "passed",
+			Reminders: reminderLabels(e), Priority: e.Priority, Next: "passed",
 			KeptAfter: !e.ShouldAutoRemove() && (!e.IsRepeating() || e.Until != ""),
 		}
 		if start, err := e.Start(loc); err == nil {

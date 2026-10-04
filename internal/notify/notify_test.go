@@ -84,3 +84,11 @@ func TestDefaultTopic(t *testing.T) {
 		}
 	}
 }
+
+func TestFormat_AtTime(t *testing.T) {
+	e := events.Event{Name: "Take medicine", Date: "2026-10-02T20:00", Repeat: events.Daily}
+	title, msg, tags := Format(e, "0m", time.Date(2026, 10, 2, 20, 0, 0, 0, time.UTC))
+	if title != "Reminder" || msg != "Take medicine at 20:00" || tags != "alarm_clock" {
+		t.Errorf("Format = %q %q %q", title, msg, tags)
+	}
+}

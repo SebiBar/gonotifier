@@ -9,7 +9,7 @@ notifications to your devices through [ntfy](https://ntfy.sh).
 - **One-time or repeating events**: daily, weekly, monthly or yearly, every N, optionally until a date
 - **Several reminders per event**, e.g. 7 days, 1 day and 1 hour before
 - **On time**: each reminder is sent the moment it's due, and missed ones are caught up after downtime
-- **Calendar feed** to show your events in Google Calendar or any calendar app, optionally at a secret URL
+- **Calendar feed** to show your events and their reminders in Google Calendar or any calendar app
 - **JSON API** with import/export, so scripts, other services or AI tools can read and manage events
 - **Lightweight**: one static Go binary and one SQLite file; a minimal image for `amd64` and `arm64` (Raspberry Pi)
 
@@ -47,7 +47,7 @@ All settings are environment variables. Only `NTFY_URL` is required.
 |---|---|---|
 | `NTFY_URL` | **required** | ntfy server URL, e.g. `http://ntfy:80`. Logins are checked there too |
 | `TZ` | `UTC` | Your timezone, e.g. `America/New_York` |
-| `DEFAULT_NOTIFY_TIME` | `09:00` | When day-based reminders fire |
+| `DEFAULT_NOTIFY_TIME` | `09:00` | When reminders of all-day events fire |
 | `CATCHUP_WINDOW` | `24h` | How late a missed reminder may still be sent |
 | `DB_PATH` | `/data/gonotifier.db` | SQLite database (events and sent reminders) |
 | `FEED_URL` | — | Public address the calendar feed is reachable on, e.g. `https://cal.example.com`, if it differs from the one you open the UI on. The UI then shows feed links there |
@@ -61,19 +61,22 @@ All settings are environment variables. Only `NTFY_URL` is required.
 |---|---|---|
 | `name` | yes | What to remind you about |
 | `date` | yes | `YYYY-MM-DD` (all day) or `YYYY-MM-DDTHH:MM` (at a time). For repeats, the first occurrence |
-| `reminders` | yes | When to notify, e.g. `["7d", "1d", "1h"]` |
+| `reminders` | yes | When to notify, e.g. `["1d", "1h", "0m"]` (see below) |
 | `repeat` | | `daily`, `weekly`, `monthly` or `yearly`; omit for a one-time event |
 | `every` | | Repeat interval: `every: 3` with `monthly` means every 3 months |
 | `until` | | Last date (`YYYY-MM-DD`) a repeat may fall on |
-| `notify_time` | | When day-based reminders fire for this event, e.g. `08:00` |
+| `notify_time` | | All-day events: when their reminders fire, e.g. `08:00` |
 | `topic` | | ntfy topic for this event (default `<username>_reminders`). Shared topics work too, e.g. `family_reminders` |
 | `priority` | | `min`, `low`, `default`, `high` or `urgent` |
 | `tags` | | ntfy tags, comma-separated (replaces the automatic ones) |
 | `auto_remove` | | `false` keeps the event after it has finished (default `true`) |
 
-**Reminder offsets:** `Nd` fires N days before at the notify time (`0d` = 00:00 on the day);
-`Nh` / `Nm` fire exactly that long before the event's time. On a repeating event, a reminder must
-be shorter than the repeat interval.
+**Reminders** work like in calendar apps:
+- **Events at a time:** `Nd`, `Nh` and `Nm` fire exactly that long before (`1d` = 24 hours before).
+  `0m` fires at the event's time, for simple reminders like taking medicine.
+- **All-day events:** `Nd` fires N days before, at the notify time (`0d` = on the day).
+
+On a repeating event, a reminder must be shorter than the repeat interval.
 
 **Repeats** keep the same day of the month; on the 31st they fall on the last day of shorter months.
 
@@ -113,14 +116,17 @@ curl -u alice --data-binary @events.json http://gonotifier:8080/api/import
 
 ## Calendar feed
 
-Each user has a calendar feed with all their events, repeats and reminders, at a secret URL:
-the **Calendar feed** link in the web UI. Calendar apps fetch it without logging in, so the URL is
-the password: anyone who has it can read your event names. If it leaks, replace it with the button
-next to the link (calendars subscribed to the old one then need the new one).
+Each user has a calendar feed with all their events, repeats and reminders, at a secret URL: copy it
+from **Calendar feed** in the web UI. Calendar apps fetch it without logging in, so the URL is the
+password: anyone who has it can read your event names. If it leaks, replace it with **New link**
+(calendars subscribed to the old one then need the new one).
 
-To subscribe in Google Calendar: **Settings → Add calendar → From URL**, and paste the link. The URL
-must be reachable from the internet; Google refreshes it every 12–24 hours. If only the feed is public,
-on another hostname than the UI, set `FEED_URL` so the link already points there.
+Add it to your calendar app as a subscription, so it stays up to date: in Google Calendar,
+**Other calendars → + → From URL**. (Opening the `.ics` file instead imports a copy that never
+updates.) The URL must be reachable from the internet; Google refreshes it every 12–24 hours.
+Calendar apps decide for themselves whether to show a feed's reminders: Google Calendar ignores
+them in subscriptions and uses your default notifications for that calendar. If only the feed is
+public, on another hostname than the UI, set `FEED_URL` so the link already points there.
 
 ## Data and backups
 

@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"slices"
@@ -17,10 +18,22 @@ import (
 
 type option struct{ Value, Label string }
 
+// chip is a reminder choice in the form; Minutes is how long before the event it is.
+type chip struct {
+	Value, Label string
+	Minutes      int
+}
+
 var (
-	chipOffsets = []option{
-		{"30m", "30 min"}, {"1h", "1 hour"}, {"12h", "12 hours"}, {"1d", "1 day"}, {"2d", "2 days"},
-		{"3d", "3 days"}, {"7d", "1 week"}, {"14d", "2 weeks"}, {"30d", "30 days"},
+	// Like calendar apps: events at a time get exact durations, all-day events get days
+	// (sent at the notify time).
+	timedChips = []chip{
+		{"0m", "At time", 0}, {"10m", "10 min", 10}, {"30m", "30 min", 30}, {"1h", "1 hour", 60},
+		{"12h", "12 hours", 720}, {"1d", "1 day", 1440}, {"2d", "2 days", 2880}, {"7d", "1 week", 10080},
+	}
+	allDayChips = []chip{
+		{"0d", "On the day", 0}, {"1d", "1 day", 1440}, {"2d", "2 days", 2880}, {"3d", "3 days", 4320},
+		{"7d", "1 week", 10080}, {"14d", "2 weeks", 20160}, {"30d", "30 days", 43200},
 	}
 	repeatOptions = []option{
 		{events.Once, "Once"}, {events.Daily, "Daily"}, {events.Weekly, "Weekly"},
@@ -52,8 +65,17 @@ func (fd formData) isSelected(offset string) bool { return slices.Contains(fd.Se
 
 // alpineState is the form's Alpine.js x-data, JSON-encoded so values are always safely escaped.
 func (fd formData) alpineState() string {
-	state, _ := templ.JSONString(map[string]any{"repeat": fd.Repeat, "every": fd.Every, "until": fd.Until, "more": fd.ShowMore})
+	state, _ := templ.JSONString(map[string]any{
+		"repeat": fd.Repeat, "every": fd.Every, "until": fd.Until, "more": fd.ShowMore,
+		"time": fd.Time, "notifyTime": fd.Event.NotifyTime, "defaultNotify": fd.DefaultNotifyTime,
+	})
 	return state // strings and a bool always encode
+}
+
+// fits is an Alpine.js expression: whether a reminder this many minutes before the event is
+// shorter than the repeat interval. Longer ones are hidden (and rejected by events.Validate).
+func fits(minutes int) string {
+	return fmt.Sprintf("!repeat || %d < {daily: 1440, weekly: 10080, monthly: 40320, yearly: 525600}[repeat] * Math.max(1, +every || 1)", minutes)
 }
 
 // renderList returns the event list plus out-of-band refreshes of the count and "Upcoming".
@@ -101,9 +123,13 @@ func fillForm(fd *formData, e events.Event) {
 		fd.Every = strconv.Itoa(e.Every)
 	}
 	fd.Selected = nil
+	chips := allDayChips
+	if e.HasTime() {
+		chips = timedChips
+	}
 	var custom []string
 	for _, rem := range e.Reminders {
-		if slices.ContainsFunc(chipOffsets, func(c option) bool { return c.Value == rem }) {
+		if slices.ContainsFunc(chips, func(c chip) bool { return c.Value == rem }) {
 			fd.Selected = append(fd.Selected, rem)
 		} else {
 			custom = append(custom, rem)
@@ -115,7 +141,7 @@ func fillForm(fd *formData, e events.Event) {
 	if fd.Priority == "" {
 		fd.Priority = "default"
 	}
-	fd.ShowMore = e.NotifyTime != "" || e.Topic != "" || e.Tags != "" || fd.Priority != "default" || !fd.AutoRemove
+	fd.ShowMore = (e.NotifyTime != "" && !e.HasTime()) || e.Topic != "" || e.Tags != "" || fd.Priority != "default" || !fd.AutoRemove
 }
 
 func (s *server) newForm(w http.ResponseWriter, r *http.Request) {
@@ -258,6 +284,6 @@ func (s *server) resetFeed(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	setTrigger(w, false, "New calendar link created", "success")
-	render(w, r, http.StatusOK, FeedLink(s.feedURL(token)))
+	setTrigger(w, false, "New link created: copy it into your calendar app", "success")
+	render(w, r, http.StatusOK, FeedURL(s.feedURL(token)))
 }

@@ -131,6 +131,7 @@ var reBirthdayOwner = regexp.MustCompile(`(?i)^(.+?)['’]s? birthday$`)
 //	Yearly tmrw      → ("Birthday Reminder", "Mom's birthday is tomorrow!", "birthday,cake")
 //	Yearly today     → ("Happy Birthday!", "Happy birthday Mom!", "birthday,tada")
 //	Timed in 12h     → ("Reminder", "Dentist in 12 hours (Nov 15 at 10:00)", "calendar")
+//	Timed, at time   → ("Reminder", "Take medicine at 08:00", "alarm_clock")
 //	Date-only today  → ("Reminder", "Renew car insurance is today!", "bell")
 //
 // Yearly events whose name doesn't mention "birthday" get generic annual wording; other
@@ -146,6 +147,9 @@ func Format(event events.Event, offset string, eventDatetime time.Time) (title, 
 	when := events.HumanOffset(dur, unit)
 
 	switch {
+	case event.HasTime() && dur == 0:
+		return "Reminder", fmt.Sprintf("%s at %s", event.Name, eventDatetime.Format("15:04")), "alarm_clock"
+
 	case event.Repeat == events.Yearly:
 		dateStr := eventDatetime.Format("January 2")
 		birthday := strings.Contains(strings.ToLower(event.Name), "birthday")

@@ -288,16 +288,18 @@ func TestFeed(t *testing.T) {
 			t.Errorf("%s: status %d, want 404", path, rr.Code)
 		}
 	}
-	// The dashboard links to the user's secret URL so it can be copied.
-	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `href="`+feed+`"`) {
-		t.Error("dashboard doesn't link to the feed URL")
+	// The dashboard shows the user's secret URL so it can be copied (not opened: on a phone
+	// that imports a copy that never updates).
+	body := do(mux, "GET", "/", "", nil).Body.String()
+	if !strings.Contains(body, `value="`+feed+`"`) || strings.Contains(body, `href="`+feed+`"`) {
+		t.Error("dashboard doesn't show the feed URL to copy")
 	}
 
 	// Replacing the link: the old one stops working, the new one works.
 	rr = do(mux, "POST", "/feed/reset", "", map[string]string{"HX-Request": "true"})
 	u2, _ := env.Store.GetUser(testutil.User)
 	newFeed := "/feed/" + u2.FeedToken + ".ics"
-	if rr.Code != 200 || newFeed == feed || !strings.Contains(rr.Body.String(), `href="`+newFeed+`"`) {
+	if rr.Code != 200 || newFeed == feed || !strings.Contains(rr.Body.String(), `value="`+newFeed+`"`) {
 		t.Fatalf("reset: %d %s", rr.Code, rr.Body.String())
 	}
 	if do(mux, "GET", feed, "", nil).Code != 404 || do(mux, "GET", newFeed, "", nil).Code != 200 {
@@ -309,11 +311,11 @@ func TestFeedURL_ShownOnPublicHost(t *testing.T) {
 	env, mux, _ := newTestMux(t, sampleEvents)
 	env.Cfg.FeedURL = "https://cal.example.com"
 	u, _ := env.Store.GetUser(testutil.User)
-	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `href="https://cal.example.com/feed/`+u.FeedToken+`.ics"`) {
+	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `value="https://cal.example.com/feed/`+u.FeedToken+`.ics"`) {
 		t.Error("dashboard doesn't link to the feed on FEED_URL")
 	}
 	rr := do(mux, "POST", "/feed/reset", "", map[string]string{"HX-Request": "true"})
-	if !strings.Contains(rr.Body.String(), `href="https://cal.example.com/feed/`) {
+	if !strings.Contains(rr.Body.String(), `value="https://cal.example.com/feed/`) {
 		t.Errorf("reset doesn't use FEED_URL: %s", rr.Body.String())
 	}
 }
@@ -369,5 +371,37 @@ func TestNoEmojiInUI(t *testing.T) {
 				break
 			}
 		}
+	}
+}
+
+func TestForm_RemindersFollowTheEventType(t *testing.T) {
+	env, mux, _ := newTestMux(t, "")
+	body := do(mux, "GET", "/events/new", "", nil).Body.String()
+	for _, want := range []string{`value="0m"`, ">At time", `value="0d"`, ">On the day", `x-show="time"`, `x-show="!time"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("new form missing %q", want)
+		}
+	}
+	// Choices as long as the repeat interval are hidden (e.g. "1 week" on a daily event).
+	if !strings.Contains(body, `x-show="!repeat || 10080 &lt; {daily: 1440`) {
+		t.Error("reminder choices aren't hidden by the repeat interval")
+	}
+
+	// "At time" on a daily event: for simple reminders like taking medicine.
+	form := url.Values{"name": {"Take medicine"}, "date": {"2026-10-02"}, "time": {"20:00"}, "repeat": {"daily"}, "reminders": {"0m"}}
+	if rr := do(mux, "POST", "/events", form.Encode(), formHeaders); rr.Header().Get("HX-Retarget") != "" {
+		t.Fatalf("at-time reminder rejected: %s", rr.Body.String())
+	}
+	if e := get(t, env, "Take medicine"); strings.Join(e.Reminders, ",") != "0m" {
+		t.Errorf("reminders = %v", e.Reminders)
+	}
+	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `<span class="chip">at time</span>`) {
+		t.Error("event list doesn't show the at-time reminder")
+	}
+
+	// Hours on an all-day event don't make sense: rejected with a hint.
+	form = url.Values{"name": {"Insurance"}, "date": {"2026-12-01"}, "custom_reminders": {"2h"}}
+	if rr := do(mux, "POST", "/events", form.Encode(), formHeaders); !strings.Contains(rr.Body.String(), "all-day events remind in days") {
+		t.Errorf("hours on all-day accepted: %s", rr.Body.String())
 	}
 }

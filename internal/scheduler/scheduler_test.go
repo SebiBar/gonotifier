@@ -29,9 +29,10 @@ func check(t *testing.T, s *Scheduler) (int, time.Time) {
 }
 
 func TestCheck_SendsDue(t *testing.T) {
-	// At 09:05 both "1d" reminders (fired 09:00 today) are due and only 5 minutes late.
+	// At 09:05 both "1d" reminders (fired 09:00 today: 24h before the dentist, and at the
+	// notify time the day before the all-day birthday) are due and only 5 minutes late.
 	s, env := setup(t, `[
-	{"name": "Dentist", "date": "2026-10-03T10:00", "reminders": ["1d"], "priority": "high"},
+	{"name": "Dentist", "date": "2026-10-03T09:00", "reminders": ["1d"], "priority": "high"},
 	{"name": "Mom's birthday", "date": "1960-10-03", "repeat": "yearly", "reminders": ["1d"], "topic": "family"}
 ]`)
 	testutil.FreezeClock(t, time.Date(2026, 10, 2, 9, 5, 0, 0, testutil.Loc))
@@ -43,7 +44,7 @@ func TestCheck_SendsDue(t *testing.T) {
 		byTopic[n.Topic] = n
 	}
 	d := byTopic["alice_reminders"] // the owner's default topic
-	if d.Title != "Reminder" || d.Body != "Dentist is tomorrow at 10:00" || d.Priority != "high" ||
+	if d.Title != "Reminder" || d.Body != "Dentist is tomorrow at 09:00" || d.Priority != "high" ||
 		d.Tags != "calendar" || d.Auth != "Bearer "+testutil.UserToken {
 		t.Errorf("dentist notification: %+v", d)
 	}
@@ -76,8 +77,8 @@ func TestCheck_ReturnsNextFireTime(t *testing.T) {
 	if n != 0 || len(env.Ntfy.All()) != 0 {
 		t.Errorf("nothing should be due, sent %d", n)
 	}
-	// Earliest future fire: "Later" 1d → Oct 9 09:00.
-	if want := time.Date(2026, 10, 9, 9, 0, 0, 0, testutil.Loc); !next.Equal(want) {
+	// Earliest future fire: "Later" 1d → exactly 24 hours before, Oct 9 10:00.
+	if want := time.Date(2026, 10, 9, 10, 0, 0, 0, testutil.Loc); !next.Equal(want) {
 		t.Errorf("next = %v, want %v", next, want)
 	}
 	if got, ok := s.Next(); !ok || !got.Equal(next) {
@@ -318,7 +319,7 @@ func TestCheck_EachUserWithOwnTokenAndTopic(t *testing.T) {
 	if _, err := env.Store.CreateEvent(testutil.Other, events.Event{Name: "Gym", Date: "2026-10-03T10:00", Reminders: []string{"1d"}, Topic: "family"}); err != nil {
 		t.Fatal(err)
 	}
-	testutil.FreezeClock(t, time.Date(2026, 10, 2, 9, 5, 0, 0, testutil.Loc)) // both "1d" reminders fired at 09:00
+	testutil.FreezeClock(t, time.Date(2026, 10, 2, 10, 5, 0, 0, testutil.Loc)) // both "1d" reminders fired at 10:00
 	check(t, s)
 	got := map[string]testutil.Notification{}
 	for _, n := range env.Ntfy.All() {
@@ -337,5 +338,27 @@ func TestCheck_EachUserWithOwnTokenAndTopic(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(env.Cfg.ExportDir, name+".json")); err != nil {
 			t.Errorf("no export file for %s: %v", name, err)
 		}
+	}
+}
+
+func TestCheck_AtTimeReminder(t *testing.T) {
+	// "Take medicine" every day at 10:00, reminded at the time itself.
+	s, env := setup(t, `[{"name":"Take medicine","date":"2026-10-02T10:00","repeat":"daily","reminders":["0m"]}]`)
+	if n, next := check(t, s); n != 1 || !next.Equal(time.Date(2026, 10, 3, 10, 0, 0, 0, testutil.Loc)) {
+		t.Fatalf("sent %d, next %v", n, next)
+	}
+	if got := env.Ntfy.All()[0]; got.Body != "Take medicine at 10:00" || got.Tags != "alarm_clock" {
+		t.Errorf("notification = %+v", got)
+	}
+}
+
+func TestCheck_AllDayOnTheDay(t *testing.T) {
+	// "On the day" fires at the notify time (09:00), after the all-day event has started,
+	// and must not be skipped even with a short catch-up window.
+	s, env := setup(t, `[{"name":"Insurance","date":"2026-10-02","reminders":["0d"]}]`)
+	env.Cfg.CatchupWindow = 2 * time.Hour
+	testutil.FreezeClock(t, time.Date(2026, 10, 2, 9, 5, 0, 0, testutil.Loc))
+	if n, _ := check(t, s); n != 1 || env.Ntfy.All()[0].Body != "Insurance is today!" {
+		t.Errorf("sent %d: %+v", n, env.Ntfy.All())
 	}
 }

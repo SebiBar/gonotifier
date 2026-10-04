@@ -49,7 +49,7 @@ templ Form(fd formData) {
 				</label>
 				<label class="field">
 					<span class="field-label">Time <span class="muted">(optional)</span></span>
-					<input type="time" name="time" value={ fd.Time }/>
+					<input type="time" name="time" value={ fd.Time } x-model="time"/>
 				</label>
 			</div>
 			<p class="hint hint-tight">Leave the time empty for an all-day event.</p>
@@ -81,14 +81,26 @@ templ Form(fd formData) {
 					<input type="date" name="until" x-model="until"/>
 				</label>
 			</div>
+			// Two sets of choices, shown by whether the event has a time. Hidden choices are
+			// disabled so they aren't submitted.
 			<div class="field">
-				<span class="field-label">Remind me before</span>
-				<div class="chip-group">
-					for _, c := range chipOffsets {
-						<label class="chip-toggle"><input type="checkbox" name="reminders" value={ c.Value } checked?={ fd.isSelected(c.Value) }/>{ c.Label }</label>
+				<span class="field-label">Remind me</span>
+				<div class="chip-group" x-show="time">
+					for _, c := range timedChips {
+						<label class="chip-toggle" x-show={ fits(c.Minutes) }>
+							<input type="checkbox" name="reminders" value={ c.Value } checked?={ fd.isSelected(c.Value) } :disabled={ "!time || !(" + fits(c.Minutes) + ")" }/>{ c.Label }
+						</label>
 					}
 				</div>
-				<input type="text" name="custom_reminders" placeholder="Other offsets, e.g. 10d, 2h, 45m" value={ fd.CustomReminders } aria-label="Other reminder offsets" autocomplete="off"/>
+				<div class="chip-group" x-show="!time">
+					for _, c := range allDayChips {
+						<label class="chip-toggle" x-show={ fits(c.Minutes) }>
+							<input type="checkbox" name="reminders" value={ c.Value } checked?={ fd.isSelected(c.Value) } :disabled={ "time || !(" + fits(c.Minutes) + ")" }/>{ c.Label }
+						</label>
+					}
+				</div>
+				<input type="text" name="custom_reminders" value={ fd.CustomReminders } aria-label="Other reminders" autocomplete="off" :placeholder="time ? 'Other, e.g. 2h, 45m, 3d' : 'Other, e.g. 10d'"/>
+				<p class="hint" x-show="!time" x-text="'All-day reminders are sent at ' + (notifyTime || defaultNotify) + '.'"></p>
 			</div>
 			<button type="button" class="disclosure" :class="more && 'open'" @click="more = !more" :aria-expanded="more">
 				<span>More options</span>
@@ -114,9 +126,9 @@ templ Form(fd formData) {
 						}
 					</div>
 				</div>
-				<label class="field">
-					<span class="field-label">Day reminders arrive at</span>
-					<input type="time" name="notify_time" value={ fd.Event.NotifyTime }/>
+				<label class="field" x-show="!time">
+					<span class="field-label">All-day reminders arrive at</span>
+					<input type="time" name="notify_time" value={ fd.Event.NotifyTime } x-model="notifyTime" :disabled="time"/>
 					<span class="hint">Leave empty for the default ({ fd.DefaultNotifyTime }).</span>
 				</label>
 				<div class="row2">

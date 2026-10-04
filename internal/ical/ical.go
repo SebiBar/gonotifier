@@ -21,12 +21,15 @@ import (
 //	  SUMMARY:{name}
 //	  DTSTART: (date-only → VALUE=DATE:YYYYMMDD, datetime → TZID=...:YYYYMMDDTHHMMSS)
 //	  For repeats: RRULE:FREQ=DAILY|WEEKLY|MONTHLY|YEARLY[;INTERVAL=n][;UNTIL=…]
-//	  For each reminder: VALARM with TRIGGER:-P{days}D or -PT{hours}H{minutes}M
+//	  For each reminder: VALARM with UID and TRIGGER relative to the start, matching
+//	  events.FireTime: -PT30M (30 minutes before), PT0S (at the time), and for all-day
+//	  events the notify time: -PT15H (the day before at 09:00), PT9H (on the day at 09:00)
 //	  END:VEVENT
 //	END:VCALENDAR
 //
-// Google Calendar subscribes to /feed.ics and polls every 12-24h.
-func Generate(evs []events.Event, loc *time.Location) string {
+// def is the notify time of all-day events that don't set their own.
+// Calendar apps subscribe to /feed/<token>.ics and poll it every few hours.
+func Generate(evs []events.Event, loc *time.Location, def events.TimeOnly) string {
 	var b strings.Builder
 	line := func(s string) { b.WriteString(foldLine(s)) }
 
@@ -60,11 +63,12 @@ func Generate(evs []events.Event, loc *time.Location) string {
 			line("RRULE:" + rule)
 		}
 		for _, off := range e.Reminders {
-			trigger, err := icalTrigger(off)
+			trigger, err := icalTrigger(e, off, def)
 			if err != nil {
 				continue
 			}
 			line("BEGIN:VALARM")
+			line("UID:" + e.ID + "-" + off + "@gonotifier") // RFC 9074, so clients keep each alarm
 			line("ACTION:DISPLAY")
 			line("DESCRIPTION:" + escapeText(e.Name))
 			line("TRIGGER:" + trigger)
@@ -111,28 +115,50 @@ func rrule(e events.Event, start time.Time, loc *time.Location) string {
 	return r
 }
 
-// icalTrigger converts an offset into an RFC 5545 duration before the event start.
-func icalTrigger(offset string) (string, error) {
-	dur, unit, err := events.ParseOffset(offset)
+// icalTrigger returns when a reminder fires relative to the event's start, as an RFC 5545
+// duration, matching events.FireTime: exactly the offset before a timed event, and for an
+// all-day event (which starts at 00:00) N days before at the notify time.
+func icalTrigger(e events.Event, offset string, def events.TimeOnly) (string, error) {
+	dur, _, err := events.ParseOffset(offset)
 	if err != nil {
 		return "", err
 	}
-	if dur == 0 {
-		return "PT0S", nil
+	rel := -dur
+	if !e.HasTime() {
+		nt := def
+		if t, err := events.ParseTimeOnly(e.NotifyTime); err == nil {
+			nt = t
+		}
+		days := dur / (24 * time.Hour)
+		rel = -days*24*time.Hour + time.Duration(nt.Hour)*time.Hour + time.Duration(nt.Minute)*time.Minute
 	}
-	if unit == "d" {
-		return fmt.Sprintf("-P%dD", int(dur/(24*time.Hour))), nil
+	return formatDuration(rel), nil
+}
+
+// formatDuration renders d as an RFC 5545 duration: -P1DT2H30M, PT9H, PT0S.
+func formatDuration(d time.Duration) string {
+	if d == 0 {
+		return "PT0S"
 	}
-	h := int(dur / time.Hour)
-	m := int((dur % time.Hour) / time.Minute)
-	s := "-PT"
-	if h > 0 {
-		s += fmt.Sprintf("%dH", h)
+	sign := ""
+	if d < 0 {
+		sign, d = "-", -d
 	}
-	if m > 0 {
-		s += fmt.Sprintf("%dM", m)
+	days, h, m := d/(24*time.Hour), (d%(24*time.Hour))/time.Hour, (d%time.Hour)/time.Minute
+	s := sign + "P"
+	if days > 0 {
+		s += fmt.Sprintf("%dD", days)
 	}
-	return s, nil
+	if h > 0 || m > 0 {
+		s += "T"
+		if h > 0 {
+			s += fmt.Sprintf("%dH", h)
+		}
+		if m > 0 {
+			s += fmt.Sprintf("%dM", m)
+		}
+	}
+	return s
 }
 
 var icalEscaper = strings.NewReplacer(`\`, `\\`, ";", `\;`, ",", `\,`, "\r\n", `\n`, "\n", `\n`)

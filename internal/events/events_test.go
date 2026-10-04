@@ -82,18 +82,23 @@ func TestParseOffset(t *testing.T) {
 func TestFireTime(t *testing.T) {
 	timed := events.Event{Date: "2026-11-15T10:00"}
 	occ := at(2026, 11, 15, 10, 0)
+	allDay := events.Event{Date: "2026-12-01"}
+	allDayOcc := at(2026, 12, 1, 0, 0)
 	cases := []struct {
 		e    events.Event
 		off  string
 		occ  time.Time
 		want time.Time
 	}{
-		{timed, "1d", occ, at(2026, 11, 14, 9, 0)},                                               // day offset → notify time
-		{events.Event{NotifyTime: "07:45"}, "3d", occ, at(2026, 11, 12, 7, 45)},                  // per-event notify time
-		{timed, "0d", occ, at(2026, 11, 15, 0, 0)},                                               // 0d → midnight
-		{timed, "12h", occ, at(2026, 11, 14, 22, 0)},                                             // exact
-		{timed, "30m", occ, at(2026, 11, 15, 9, 30)},                                             // exact
-		{events.Event{Date: "2026-12-01"}, "2h", at(2026, 12, 1, 0, 0), at(2026, 11, 30, 22, 0)}, // all-day counts from 00:00
+		// At a time: exactly that long before, like calendar apps.
+		{timed, "1d", occ, at(2026, 11, 14, 10, 0)},
+		{timed, "12h", occ, at(2026, 11, 14, 22, 0)},
+		{timed, "30m", occ, at(2026, 11, 15, 9, 30)},
+		{timed, "0m", occ, occ}, // at the time
+		// All-day: N days before, at the notify time.
+		{allDay, "1d", allDayOcc, at(2026, 11, 30, 9, 0)},
+		{allDay, "0d", allDayOcc, at(2026, 12, 1, 9, 0)}, // on the day
+		{events.Event{Date: "2026-12-01", NotifyTime: "07:45"}, "3d", allDayOcc, at(2026, 11, 28, 7, 45)},
 	}
 	for _, c := range cases {
 		got, err := events.FireTime(c.e, c.off, c.occ, nineAM)
@@ -216,7 +221,8 @@ func TestValidate(t *testing.T) {
 		"bad date":          {Name: "A", Date: "2026-13-01", Reminders: []string{"1d"}},
 		"no reminders":      {Name: "A", Date: "2026-12-01"},
 		"bad reminder":      {Name: "A", Date: "2026-12-01", Reminders: []string{"5x"}},
-		"bad repeat":        {Name: "A", Date: "2026-12-01", Repeat: "hourly", Reminders: []string{"1h"}},
+		"bad repeat":        {Name: "A", Date: "2026-12-01", Repeat: "hourly", Reminders: []string{"1d"}},
+		"hours on all-day":  {Name: "A", Date: "2026-12-01", Reminders: []string{"2h"}},
 		"until before date": {Name: "A", Date: "2026-12-01", Repeat: events.Weekly, Until: "2026-11-01", Reminders: []string{"1d"}},
 		"bad until":         {Name: "A", Date: "2026-12-01", Repeat: events.Weekly, Until: "soon", Reminders: []string{"1d"}},
 		"lead ≥ period":     {Name: "A", Date: "2026-12-01", Repeat: events.Daily, Reminders: []string{"1d"}},
@@ -231,7 +237,7 @@ func TestValidate(t *testing.T) {
 		}
 	}
 	// Shorter-than-period reminders on repeats are fine.
-	daily := events.Event{Name: "Pills", Date: "2026-12-01T08:00", Repeat: events.Daily, Reminders: []string{"0d", "30m"}}
+	daily := events.Event{Name: "Pills", Date: "2026-12-01T08:00", Repeat: events.Daily, Reminders: []string{"0m", "30m"}}
 	if errs := events.Validate(daily, nil, ""); len(errs) != 0 {
 		t.Errorf("daily with short reminders rejected: %v", errs)
 	}
@@ -297,5 +303,18 @@ func TestEncodeRoundTrip(t *testing.T) {
 	}
 	if data, _ := events.Encode(nil); !strings.Contains(string(data), `"events": []`) {
 		t.Errorf("empty export = %s", data)
+	}
+}
+
+func TestNormalize_ZeroReminders(t *testing.T) {
+	timed := events.Event{Date: "2026-12-01T08:00", Reminders: []string{"0d", "0h", "30m"}, NotifyTime: "07:00"}
+	events.Normalize(&timed)
+	if strings.Join(timed.Reminders, ",") != "0m,30m" || timed.NotifyTime != "" {
+		t.Errorf("timed: reminders %v, notify time %q", timed.Reminders, timed.NotifyTime)
+	}
+	allDay := events.Event{Date: "2026-12-01", Reminders: []string{"0m", "1d"}}
+	events.Normalize(&allDay)
+	if strings.Join(allDay.Reminders, ",") != "0d,1d" {
+		t.Errorf("all-day: reminders %v", allDay.Reminders)
 	}
 }

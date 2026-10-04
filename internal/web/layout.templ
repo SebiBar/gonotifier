@@ -24,10 +24,7 @@ templ Login(username, errMsg string) {
 		<body>
 			@iconSprite()
 			<main class="container login">
-				<div class="brand">
-					@Icon("bell")
-					<span>gonotifier</span>
-				</div>
+				<div class="brand">gonotifier</div>
 				<form class="panel login-panel" method="post" action="/login">
 					if errMsg != "" {
 						<div class="form-errors" role="alert">
@@ -65,10 +62,7 @@ templ Page(p pageData) {
 			@iconSprite()
 			<header class="topbar">
 				<div class="container topbar-inner">
-					<a href="/" class="brand">
-						@Icon("bell")
-						<span>gonotifier</span>
-					</a>
+					<a href="/" class="brand">gonotifier</a>
 					<div class="topbar-actions">
 						<span class="muted small user-name">{ p.Username }</span>
 						<form method="post" action="/logout">
@@ -134,34 +128,59 @@ templ Page(p pageData) {
 	</html>
 }
 
-// FeedLink is the user's secret calendar feed URL, with a button to replace it.
+// FeedLink opens a dialog with the user's secret calendar feed URL, to copy into a calendar
+// app as a subscription. (Opening the .ics itself would import a copy that never updates.)
 templ FeedLink(url string) {
-	<div id="feed" class="feed">
-		<a href={ templ.URL(url) } class="link-quiet" title="Your private calendar feed: copy the link into Google Calendar → Add calendar → From URL">
-			@Icon("rss")
-			<span>Calendar feed</span>
-		</a>
+	<button type="button" class="link-quiet link-btn" onclick="this.nextElementSibling.showModal()">
+		@Icon("rss")
+		<span>Calendar feed</span>
+	</button>
+	<dialog class="modal modal-sm" @click.self="$el.close()">
+		<article>
+			<div class="modal-head">
+				<h3 class="modal-title">Calendar feed</h3>
+				<button type="button" class="icon-btn" aria-label="Close" onclick="this.closest('dialog').close()">
+					@Icon("x")
+				</button>
+			</div>
+			<div class="modal-body">
+				<p class="muted">Add this link to your calendar app to see your events there. In Google Calendar: <strong>Other calendars → + → From URL</strong>.</p>
+				@FeedURL(url)
+				<p class="hint">It's private: anyone with the link can see your events. Calendar apps refresh it every few hours.</p>
+			</div>
+			<div class="modal-foot">
+				<button
+					type="button"
+					class="btn btn-ghost"
+					hx-post="/feed/reset"
+					hx-target="#feed-url"
+					hx-swap="outerHTML"
+					hx-confirm="The current link stops working: calendars subscribed to it need the new one."
+					data-confirm-title="Replace calendar link?"
+					data-confirm-action="Replace"
+				>New link</button>
+				<button type="button" class="btn btn-primary" onclick="this.closest('dialog').close()">Done</button>
+			</div>
+		</article>
+	</dialog>
+}
+
+// FeedURL is the copyable feed URL (swapped in when the link is replaced).
+templ FeedURL(url string) {
+	<div id="feed-url" class="copy-row">
+		<input type="text" readonly value={ url } aria-label="Calendar feed URL" onfocus="this.select()"/>
 		<button
 			type="button"
-			class="icon-btn"
-			title="New calendar link"
-			aria-label="Replace calendar link"
-			hx-post="/feed/reset"
-			hx-target="#feed"
-			hx-swap="outerHTML"
-			hx-confirm="The current link stops working: calendars subscribed to it need the new one."
-			data-confirm-title="Replace calendar link?"
-			data-confirm-action="Replace"
-		>
-			@Icon("rotate")
-		</button>
+			class="btn btn-ghost"
+			@click="navigator.clipboard.writeText($el.previousElementSibling.value).then(() => $dispatch('show-toast', {message: 'Link copied', type: 'success'}))"
+		>Copy</button>
 	</div>
 }
 
 templ history(items []HistoryView) {
 	<details class="panel">
 		<summary class="panel-head">
-			<h2>Recently sent</h2>
+			<h2>History</h2>
 			@Icon("chevron")
 		</summary>
 		if len(items) > 0 {
@@ -224,7 +243,6 @@ templ Icon(name string) {
 // iconSprite holds the line icons (Lucide, ISC licence) referenced by Icon.
 templ iconSprite() {
 	<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;width:0;height:0;overflow:hidden" aria-hidden="true">
-		<symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></symbol>
 		<symbol id="i-plus" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="M12 5v14"></path></symbol>
 		<symbol id="i-pencil" viewBox="0 0 24 24"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"></path><path d="m15 5 4 4"></path></symbol>
 		<symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18"></path><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"></path><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"></path><path d="M10 11v6"></path><path d="M14 11v6"></path></symbol>
@@ -238,6 +256,5 @@ templ iconSprite() {
 		<symbol id="i-send" viewBox="0 0 24 24"><path d="m22 2-7 20-4-9-9-4Z"></path><path d="M22 2 11 13"></path></symbol>
 		<symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
 		<symbol id="i-log-out" viewBox="0 0 24 24"><path d="m16 17 5-5-5-5"></path><path d="M21 12H9"></path><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path></symbol>
-		<symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><path d="M3 3v5h5"></path></symbol>
 	</svg>
 }

@@ -124,9 +124,10 @@ func (s *Scheduler) Check(dryRun bool) (int, time.Time, error) {
 		}
 		lead := e.MaxLead()
 		scanned := 0
-		// Any reminder still worth sending fires at ≥ now-catchup, and fires never
-		// come after their occurrence, so earlier occurrences can be skipped.
-		for occ := range e.Occurrences(now.Add(-s.cfg.CatchupWindow), s.cfg.TZ) {
+		// Any reminder still worth sending fires at ≥ now-catchup, and fires come at most
+		// a day after their occurrence starts (an all-day event's "on the day" reminder
+		// at the notify time), so earlier occurrences can be skipped.
+		for occ := range e.Occurrences(now.Add(-s.cfg.CatchupWindow-24*time.Hour), s.cfg.TZ) {
 			// Fires of this occurrence are ≥ occ-lead: once that is past both "now"
 			// (nothing due) and the best next time found, later occurrences can't matter.
 			if earliest := occ.Add(-lead); earliest.After(now) && !next.IsZero() && earliest.After(next) {
@@ -275,7 +276,7 @@ func (s *Scheduler) AutoRemoveFinished(now time.Time) (int, error) {
 // hasPending reports whether a reminder of e fired within the catchup window but
 // hasn't been sent (e.g. ntfy was down), so it may still be retried.
 func (s *Scheduler) hasPending(e events.Event, now time.Time) (bool, error) {
-	for occ := range e.Occurrences(now.Add(-s.cfg.CatchupWindow), s.cfg.TZ) {
+	for occ := range e.Occurrences(now.Add(-s.cfg.CatchupWindow-24*time.Hour), s.cfg.TZ) {
 		for _, off := range e.Reminders {
 			fire, err := events.FireTime(e, off, occ, s.cfg.DefaultNotifyTime)
 			if err != nil || fire.After(now) || now.Sub(fire) > s.cfg.CatchupWindow {

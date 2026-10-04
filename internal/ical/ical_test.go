@@ -11,7 +11,7 @@ import (
 func icalFor(t *testing.T, evs ...events.Event) string {
 	t.Helper()
 	testutil.FreezeClock(t, testutil.FixedNow)
-	return Generate(evs, testutil.Loc)
+	return Generate(evs, testutil.Loc, events.TimeOnly{Hour: 9})
 }
 
 // vevent returns the VEVENT block containing the given SUMMARY.
@@ -107,5 +107,28 @@ func TestGenerate_VAlarmsMatchOffsets(t *testing.T) {
 	}
 	if strings.Count(ev, "BEGIN:VALARM") != 6 {
 		t.Error("expected 6 VALARMs")
+	}
+}
+
+func TestGenerate_AllDayVAlarmsAtNotifyTime(t *testing.T) {
+	cal := icalFor(t,
+		events.Event{ID: "a", Name: "Insurance", Date: "2026-12-01", Reminders: []string{"0d", "1d", "7d"}},
+		events.Event{ID: "b", Name: "Early", Date: "2026-12-01", Reminders: []string{"2d"}, NotifyTime: "07:30"},
+	)
+	// All-day events start at 00:00, and their reminders arrive at the notify time.
+	ins := vevent(t, cal, "Insurance")
+	for _, want := range []string{"TRIGGER:PT9H", "TRIGGER:-PT15H", "TRIGGER:-P6DT15H"} {
+		if !strings.Contains(ins, want+"\r\n") {
+			t.Errorf("Insurance missing %s:\n%s", want, ins)
+		}
+	}
+	if early := vevent(t, cal, "Early"); !strings.Contains(early, "TRIGGER:-P1DT16H30M\r\n") {
+		t.Errorf("per-event notify time not used:\n%s", early)
+	}
+	// Each alarm has its own UID, so calendar apps don't merge them.
+	for _, uid := range []string{"UID:a-0d@gonotifier", "UID:a-1d@gonotifier", "UID:a-7d@gonotifier"} {
+		if !strings.Contains(ins, uid+"\r\n") {
+			t.Errorf("missing alarm %s", uid)
+		}
 	}
 }
