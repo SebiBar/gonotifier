@@ -151,14 +151,6 @@ command above. Mount a **directory** at `/data`, not a single file.
 - **Exposing it to the internet:** only the calendar feed needs to be public, if a calendar service
   fetches it. Expose just the `/feed/` path and keep the rest on your network or VPN.
 
-## Upgrading from 0.1
-
-`NTFY_TOKEN`, `NTFY_DEFAULT_TOPIC`, `FEED_TOKEN` and `EXPORT_FILE` are gone (a warning is logged if
-they're still set). After upgrading, log in once soon: until the first user logs in and takes over
-the existing events, their reminders aren't sent. Then subscribe to `<username>_reminders` in the ntfy
-app (or set the old topic on your events), and replace the calendar feed URL in your calendar apps.
-The old `events-export.json` is no longer updated and can be deleted.
-
 ## Development
 
 See [DEVELOPMENT.md](DEVELOPMENT.md) for how it works inside, running it locally, the project layout,
