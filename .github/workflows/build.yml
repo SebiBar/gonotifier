@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+# A newer push to the same branch or PR replaces a run that's still going.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -18,10 +26,9 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      - name: Check generated templ code is up to date
-        run: go tool templ generate && git diff --exit-code
-      - run: go vet ./...
-      - run: go test ./... -race
+      - run: sh scripts/check.sh
+      - name: Generated templ code was committed
+        run: git diff --exit-code
 
   build:
     needs: test
@@ -44,7 +51,6 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
-            type=sha,prefix=
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
       - uses: docker/build-push-action@v7
@@ -52,6 +58,7 @@ jobs:
           context: .
           platforms: linux/amd64,linux/arm64   # cross-compiled natively, see Dockerfile
           push: true
+          provenance: false                    # no extra "unknown/unknown" entry per image
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha

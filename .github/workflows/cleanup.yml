@@ -1,0 +1,27 @@
+name: Clean up old images
+on:
+  schedule:
+    - cron: "0 3 * * 0" # Sundays 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Only log what would be deleted
+        type: boolean
+        default: true
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      # Keeps :latest and the release tags (:0.3.3, :0.3) with their platform images, and deletes
+      # builds nothing points to anymore, plus the per-commit tags (:a1b2c3d) of older builds.
+      # It understands multi-arch images, so it never deletes a platform image a tag still uses.
+      - uses: dataaxiom/ghcr-cleanup-action@v1
+        with:
+          delete-untagged: true
+          delete-tags: "^[0-9a-f]{7}$"
+          use-regex: true
+          dry-run: ${{ inputs.dry-run || false }}

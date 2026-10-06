@@ -23,7 +23,7 @@ Notes for working on gonotifier. For using it, see the [README](README.md).
 - **API:** JSON only. Other services use it, so renaming or removing a field is a breaking change.
 - **Tests check behavior, not wording:** a test should fail when the app does the wrong thing, not
   when a label, message or placeholder changes. Behavior changes come with a test.
-- **Before committing:** `sh scripts/check.sh` (templ generate, gofmt, vet, tests). Commit the
+- **Before committing:** `sh scripts/check.sh` (templ generate, gofmt, vet, tests): the same checks CI runs. Commit the
   generated `*_templ.go` files with any `.templ` change; CI fails if they're out of date.
 - **Docs:** keep the README (users) and this file up to date, with only what the code doesn't say.
 
