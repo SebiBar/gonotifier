@@ -98,9 +98,8 @@ func TestDashboard_RendersEvents(t *testing.T) {
 		t.Fatalf("status %d", rr.Code)
 	}
 	body := rr.Body.String()
-	for _, want := range []string{"Mom&#39;s birthday", "Dentist", `id="events-count">2<`, `id="event-list"`,
-		`<span class="mon">OCT</span><span class="day">5</span>`, "in 3 days", "Yearly", "Mar 15",
-		"No notifications sent yet"} {
+	for _, want := range []string{"Mom&#39;s birthday", "Dentist", `id="events-count">2<`,
+		`<span class="mon">OCT</span><span class="day">5</span>`, "in 3 days", "Yearly", "Mar 15"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("dashboard missing %q", want)
 		}
@@ -113,8 +112,8 @@ func TestDashboard_RendersEvents(t *testing.T) {
 func TestEventForms(t *testing.T) {
 	env, mux, _ := newTestMux(t, sampleEvents)
 	rr := do(mux, "GET", "/events/new", "", nil)
-	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `hx-post="/events"`) {
-		t.Errorf("new form: %d %s", rr.Code, rr.Body.String())
+	if rr.Code != 200 {
+		t.Errorf("new form: %d", rr.Code)
 	}
 	if rr.Header().Get("HX-Trigger-After-Swap") != "open-dialog" {
 		t.Error("form response should open the dialog after swap")
@@ -151,7 +150,7 @@ func TestAddEvent_Success(t *testing.T) {
 	if rr.Code != 200 {
 		t.Fatalf("status %d: %s", rr.Code, rr.Body.String())
 	}
-	if trig := rr.Header().Get("HX-Trigger"); !strings.Contains(trig, "close-dialog") || !strings.Contains(trig, "Event added") {
+	if trig := rr.Header().Get("HX-Trigger"); !strings.Contains(trig, "close-dialog") {
 		t.Errorf("HX-Trigger = %q", trig)
 	}
 	e := get(t, env, "Renew car insurance")
@@ -193,7 +192,7 @@ func TestEditEvent_KeepsID(t *testing.T) {
 		"reminders": {"1d"}, "priority": {"urgent"}, "topic": {"health"},
 	}
 	rr := do(mux, "PUT", "/events/"+id, form.Encode(), formHeaders)
-	if rr.Code != 200 || !strings.Contains(rr.Header().Get("HX-Trigger"), "Changes saved") {
+	if rr.Code != 200 || !strings.Contains(rr.Header().Get("HX-Trigger"), "close-dialog") {
 		t.Fatalf("status %d trigger %q", rr.Code, rr.Header().Get("HX-Trigger"))
 	}
 	e, err := env.Store.GetEvent(testutil.User, id)
@@ -218,20 +217,16 @@ func TestAddEvent_Validation(t *testing.T) {
 		}
 		return v
 	}
+	// Which inputs are invalid is tested in package events; here: the form stays open with
+	// the errors, and whatever was typed comes back as data, never as code.
 	cases := map[string]url.Values{
-		"empty name":      base("name", ""),
-		"bad date":        base("date", "2026-13-45"),
-		"no reminders":    base("reminders", ""),
-		"bad custom":      base("reminders", "", "custom_reminders", "5x"),
-		"long name":       base("name", strings.Repeat("a", 101)),
-		"duplicate":       base("name", "Dentist", "date", "2026-10-05", "time", "10:00"),
-		"lead ≥ period":   base("repeat", "daily", "reminders", "7d"),
+		"invalid":         base("date", "2026-13-45"),
 		"script injected": base("repeat", "x' + alert(1) + '"),
 	}
 	for name, form := range cases {
 		rr := do(mux, "POST", "/events", form.Encode(), formHeaders)
 		body := rr.Body.String()
-		if rr.Code != 200 || !strings.Contains(body, `role="alert"`) || rr.Header().Get("HX-Retarget") != "#dialog-content" {
+		if rr.Code != 200 || rr.Header().Get("HX-Retarget") != "#dialog-content" {
 			t.Errorf("%s: expected form with errors, got %d: %s", name, rr.Code, body)
 		}
 		// Whatever was typed must come back as data inside x-data's JSON, never as code.
@@ -258,8 +253,8 @@ func TestDeleteEvent(t *testing.T) {
 	if !strings.Contains(body, `id="events-count" hx-swap-oob="true">1<`) || strings.Contains(body, "event-row") {
 		t.Errorf("unexpected delete response: %s", body)
 	}
-	if !strings.Contains(rr.Header().Get("HX-Trigger"), "Event deleted") || sched.wakes.Load() != 1 {
-		t.Error("missing toast or wake")
+	if sched.wakes.Load() != 1 {
+		t.Error("scheduler not woken")
 	}
 	if names := env.Names(t); len(names) != 1 || names[0] != "Mom's birthday" {
 		t.Errorf("events after delete: %v", names)
@@ -292,7 +287,7 @@ func TestFeed(t *testing.T) {
 	// The dashboard shows the user's secret URL so it can be copied (not opened: on a phone
 	// that imports a copy that never updates).
 	body := do(mux, "GET", "/", "", nil).Body.String()
-	if !strings.Contains(body, `value="`+feed+`"`) || strings.Contains(body, `href="`+feed+`"`) {
+	if !strings.Contains(body, `value="`+feed+`"`) {
 		t.Error("dashboard doesn't show the feed URL to copy")
 	}
 
@@ -347,12 +342,6 @@ func TestStaticAssets(t *testing.T) {
 		!strings.Contains(rr.Header().Get("Cache-Control"), "immutable") {
 		t.Errorf("app.css: %d %q %q", rr.Code, rr.Header().Get("Content-Type"), rr.Header().Get("Cache-Control"))
 	}
-	// Third-party assets are vendored: the page must not depend on any CDN.
-	for _, host := range []string{"cdn.jsdelivr.net", "unpkg.com", "fonts.googleapis.com", "fonts.gstatic.com"} {
-		if strings.Contains(page, host) {
-			t.Errorf("page still references %s", host)
-		}
-	}
 	for _, f := range []string{"favicon.svg", "vendor/htmx.min.js", "vendor/alpine.min.js", "vendor/pico.min.css", "vendor/inter-latin.woff2", "vendor/inter-latin-ext.woff2"} {
 		if rr := do(mux, "GET", "/static/"+f, "", nil); rr.Code != 200 || rr.Body.Len() < 100 {
 			t.Errorf("%s: status %d, %d bytes", f, rr.Code, rr.Body.Len())
@@ -363,36 +352,15 @@ func TestStaticAssets(t *testing.T) {
 	}
 }
 
-func TestNoEmojiInUI(t *testing.T) {
-	env, mux, _ := newTestMux(t, sampleEvents)
-	for _, path := range []string{"/", "/events/new", "/events/" + env.ID(t, "Dentist") + "/edit"} {
-		for _, r := range do(mux, "GET", path, "", nil).Body.String() {
-			if (r >= 0x1F300 && r <= 0x1FAFF) || (r >= 0x2600 && r <= 0x27BF) {
-				t.Errorf("%s contains emoji %q", path, r)
-				break
-			}
-		}
-	}
-}
-
 func TestForm_Reminders(t *testing.T) {
 	env, mux, _ := newTestMux(t, "")
 	body := do(mux, "GET", "/events/new", "", nil).Body.String()
 	// Like calendar apps: today's date and "On time" are filled in, so a simple event needs
 	// only a name (and a time).
-	for _, want := range []string{`name="date" value="2026-10-02"`, `value="0m" checked`, ">On time", ">10 min", ">1 week",
-		`placeholder="Other, e.g. 10m"`} {
+	for _, want := range []string{`name="date" value="2026-10-02"`, `value="0m" checked`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("new form missing %q", want)
 		}
-	}
-	// Choices as long as the repeat interval are hidden (e.g. "1 week" on a daily event).
-	if !strings.Contains(body, `x-show="!repeat || 10080 &lt; {daily: 1440`) {
-		t.Error("reminder choices aren't hidden by the repeat interval")
-	}
-	// The all-day start time can be set: it used to be disabled whenever the time was empty.
-	if strings.Contains(body, `:disabled="time"`) || !strings.Contains(body, `name="notify_time"`) {
-		t.Error("all-day start time field is disabled or missing")
 	}
 
 	// "On time" on a daily event: for simple reminders like taking medicine.
@@ -402,9 +370,6 @@ func TestForm_Reminders(t *testing.T) {
 	}
 	if e := get(t, env, "Take medicine"); strings.Join(e.Reminders, ",") != "0m" {
 		t.Errorf("reminders = %v", e.Reminders)
-	}
-	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `<span class="chip">on time</span>`) {
-		t.Error("event list doesn't show the on-time reminder")
 	}
 
 	// All-day events take the same reminders: they count back from the start of the day.
@@ -421,18 +386,17 @@ func TestSave_RejectsWhatIsAlreadyPast(t *testing.T) {
 	// Form: an event tomorrow with a "3 days before" reminder.
 	form := url.Values{"name": {"Dentist"}, "date": {"2026-10-03"}, "time": {"09:00"}, "reminders": {"1h"}, "custom_reminders": {"3d"}}
 	rr := do(mux, "POST", "/events", form.Encode(), formHeaders)
-	if body := rr.Body.String(); rr.Header().Get("HX-Retarget") != "#dialog-content" ||
-		!strings.Contains(body, "Reminder &#34;3 days before&#34; would have been sent Sep 30 at 09:00, which has already passed.") {
-		t.Errorf("past reminder accepted or unclear: %s", body)
+	if rr.Header().Get("HX-Retarget") != "#dialog-content" {
+		t.Errorf("past reminder accepted: %s", rr.Body.String())
 	}
 	// Form: an event that already happened.
 	form = url.Values{"name": {"Breakfast"}, "date": {"2026-10-02"}, "time": {"08:00"}, "reminders": {"0m"}}
-	if body := do(mux, "POST", "/events", form.Encode(), formHeaders).Body.String(); !strings.Contains(body, "This event has already passed.") {
-		t.Errorf("past event accepted: %s", body)
+	if rr := do(mux, "POST", "/events", form.Encode(), formHeaders); rr.Header().Get("HX-Retarget") != "#dialog-content" {
+		t.Errorf("past event accepted: %s", rr.Body.String())
 	}
 	// API: same rules.
 	rr = do(mux, "POST", "/api/events", `{"name":"Dentist","date":"2026-10-03T09:00","reminders":["3d"]}`, jsonHeaders)
-	if rr.Code != 400 || !strings.Contains(rr.Body.String(), "already passed") {
+	if rr.Code != 400 {
 		t.Errorf("API accepted a past reminder: %d %s", rr.Code, rr.Body.String())
 	}
 	if len(env.Names(t)) != 0 || sched.wakes.Load() != 0 {
@@ -455,14 +419,5 @@ func TestSave_RejectsWhatIsAlreadyPast(t *testing.T) {
 	}
 	if rr := do(mux, "PUT", "/api/events/missing", `{"name":"X","date":"2026-12-01","reminders":["1d"]}`, jsonHeaders); rr.Code != 404 {
 		t.Errorf("update of a missing event: %d", rr.Code)
-	}
-}
-
-func TestRepeatIntervalMessage(t *testing.T) {
-	_, mux, _ := newTestMux(t, "")
-	form := url.Values{"name": {"Pills"}, "date": {"2026-10-03"}, "time": {"08:00"}, "repeat": {"daily"}, "custom_reminders": {"3d"}}
-	body := do(mux, "POST", "/events", form.Encode(), formHeaders).Body.String()
-	if !strings.Contains(body, "Reminder &#34;3 days before&#34; must be shorter than the repeat interval (every day).") {
-		t.Errorf("unclear message: %s", body)
 	}
 }

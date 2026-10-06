@@ -29,7 +29,7 @@ type Event struct {
 	Until      string   `json:"until,omitempty"`       // last day (YYYY-MM-DD) a repeat may fall on
 	Reminders  []string `json:"reminders"`             // before the event; see FireTime
 	AutoRemove *bool    `json:"auto_remove,omitempty"` // nil → true
-	NotifyTime string   `json:"notify_time,omitempty"` // all-day events: when their day starts for reminders
+	DayStart   string   `json:"day_start,omitempty"`   // all-day events: when their day starts for reminders
 	Topic      string   `json:"topic,omitempty"`
 	Priority   string   `json:"priority,omitempty"`
 	Tags       string   `json:"tags,omitempty"`
@@ -148,13 +148,13 @@ func ReminderLabel(offset string) string {
 }
 
 // ReminderStart returns when an occurrence's reminders count back from: the event's time, or for
-// an all-day event the notify time on its date (the event's notify_time, else def).
+// an all-day event the day start on its date (the event's day_start, else def).
 func (e Event) ReminderStart(occ time.Time, def TimeOnly) time.Time {
 	if e.HasTime() {
 		return occ
 	}
 	nt := def
-	if t, err := ParseTimeOnly(e.NotifyTime); err == nil {
+	if t, err := ParseTimeOnly(e.DayStart); err == nil {
 		nt = t
 	}
 	y, m, d := occ.Date()

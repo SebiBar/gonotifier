@@ -67,7 +67,7 @@ func relativeTime(t, now time.Time, hasTime bool) string {
 			return "in " + events.HumanOffset(d.Truncate(time.Hour), "h")
 		}
 	}
-	days := calendarDays(now, t)
+	days := events.CalendarDays(now, t)
 	switch {
 	case days < 0:
 		return "passed"
@@ -76,13 +76,7 @@ func relativeTime(t, now time.Time, hasTime bool) string {
 	case days == 1:
 		return "tomorrow"
 	}
-	return fmt.Sprintf("in %d days", days)
-}
-
-func calendarDays(a, b time.Time) int {
-	ay, am, ad := a.Date()
-	by, bm, bd := b.Date()
-	return int(time.Date(by, bm, bd, 0, 0, 0, 0, time.UTC).Sub(time.Date(ay, am, ad, 0, 0, 0, 0, time.UTC)) / (24 * time.Hour))
+	return "in " + events.HumanOffset(time.Duration(days)*24*time.Hour, "d")
 }
 
 // formatDate renders an occurrence; yearly events omit the year (it's the same every year).

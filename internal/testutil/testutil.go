@@ -169,7 +169,7 @@ func NewEnv(t *testing.T, eventsDoc string) *Env {
 		Cfg: &config.Config{
 			NtfyURL: srv.URL,
 			DBPath:  dbPath, ExportDir: filepath.Join(dir, "exports"), TZ: Loc,
-			CatchupWindow: 24 * time.Hour, DefaultNotifyTime: events.TimeOnly{Hour: 9}, Port: 8080,
+			CatchupWindow: 24 * time.Hour, DefaultDayStart: events.TimeOnly{Hour: 9}, Port: 8080,
 		},
 		Store: st,
 		Ntfy:  rec,
@@ -211,4 +211,13 @@ func FreezeClock(tb testing.TB, t time.Time) {
 	prev := clock.Now
 	clock.Now = func() time.Time { return t }
 	tb.Cleanup(func() { clock.Now = prev })
+}
+
+// DownURL returns the address of a server that has stopped, so requests to it fail at once
+// (a made-up address like 127.0.0.1:1 can hang until the client's timeout instead).
+func DownURL(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.NotFoundHandler())
+	srv.Close()
+	return srv.URL
 }

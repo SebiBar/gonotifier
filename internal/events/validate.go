@@ -59,21 +59,21 @@ func Normalize(e *Event) {
 	if !e.IsRepeating() {
 		e.Until = ""
 	}
-	e.Reminders = SplitReminders(strings.Join(e.Reminders, ","))
-	for i, rem := range e.Reminders {
+	rems := SplitReminders(strings.Join(e.Reminders, ","))
+	for i, rem := range rems {
 		if dur, _, err := ParseOffset(rem); err == nil && dur == 0 {
-			e.Reminders[i] = "0m" // "on time": 0d, 0h and 0m all mean the same
+			rems[i] = "0m" // "on time": 0d, 0h and 0m all mean the same
 		}
 	}
-	e.Reminders = SplitReminders(strings.Join(e.Reminders, ","))
+	e.Reminders = slices.Compact(slices.Sorted(slices.Values(rems)))
 	sort.SliceStable(e.Reminders, func(i, j int) bool {
 		a, _, _ := ParseOffset(e.Reminders[i])
 		b, _, _ := ParseOffset(e.Reminders[j])
 		return a < b
 	})
-	e.NotifyTime = strings.TrimSpace(e.NotifyTime)
+	e.DayStart = strings.TrimSpace(e.DayStart)
 	if e.HasTime() {
-		e.NotifyTime = "" // only all-day events use it
+		e.DayStart = "" // only all-day events use it
 	}
 	e.Topic = strings.TrimSpace(e.Topic)
 	e.Tags = strings.TrimSpace(e.Tags)
@@ -141,9 +141,9 @@ func Validate(e Event, existing []Event, selfID string) []string {
 		}
 	}
 
-	if e.NotifyTime != "" {
-		if _, err := ParseTimeOnly(e.NotifyTime); err != nil {
-			errs = append(errs, "Notify time must be HH:MM.")
+	if e.DayStart != "" {
+		if _, err := ParseTimeOnly(e.DayStart); err != nil {
+			errs = append(errs, "Day start must be HH:MM.")
 		}
 	}
 	if e.Topic != "" && !reTopic.MatchString(e.Topic) {

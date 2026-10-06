@@ -23,11 +23,11 @@ import (
 //	  For repeats: RRULE:FREQ=DAILY|WEEKLY|MONTHLY|YEARLY[;INTERVAL=n][;UNTIL=…]
 //	  For each reminder: VALARM with UID and TRIGGER relative to the start, matching
 //	  events.FireTime: -PT30M (30 minutes before), PT0S (on time); all-day events count
-//	  from the notify time, e.g. with 09:00: PT9H (on time), -PT15H (1 day before)
+//	  from the day start, e.g. with 09:00: PT9H (on time), -PT15H (1 day before)
 //	  END:VEVENT
 //	END:VCALENDAR
 //
-// def is the notify time of all-day events that don't set their own.
+// def is the day start of all-day events that don't set their own.
 // Calendar apps subscribe to /feed/<token>.ics and poll it every few hours.
 func Generate(evs []events.Event, loc *time.Location, def events.TimeOnly) string {
 	var b strings.Builder
@@ -117,7 +117,7 @@ func rrule(e events.Event, start time.Time, loc *time.Location) string {
 
 // icalTrigger returns when a reminder fires relative to the event's start, as an RFC 5545
 // duration, matching events.FireTime: the offset before the event's time, or for an all-day
-// event (which starts at 00:00 in the calendar) before the notify time on its day.
+// event (which starts at 00:00 in the calendar) before the day start on its day.
 func icalTrigger(e events.Event, offset string, def events.TimeOnly) (string, error) {
 	dur, _, err := events.ParseOffset(offset)
 	if err != nil {

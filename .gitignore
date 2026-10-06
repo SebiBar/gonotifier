@@ -7,7 +7,6 @@
 *.db-wal
 *.db-shm
 /data/
-.events-*.yaml.tmp
 
 # Secrets
 .env

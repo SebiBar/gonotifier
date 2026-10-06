@@ -110,12 +110,12 @@ func TestGenerate_VAlarmsMatchOffsets(t *testing.T) {
 	}
 }
 
-func TestGenerate_AllDayVAlarmsAtNotifyTime(t *testing.T) {
+func TestGenerate_AllDayVAlarmsAtDayStart(t *testing.T) {
 	cal := icalFor(t,
 		events.Event{ID: "a", Name: "Insurance", Date: "2026-12-01", Reminders: []string{"0d", "1d", "7d"}},
-		events.Event{ID: "b", Name: "Early", Date: "2026-12-01", Reminders: []string{"2d"}, NotifyTime: "07:30"},
+		events.Event{ID: "b", Name: "Early", Date: "2026-12-01", Reminders: []string{"2d"}, DayStart: "07:30"},
 	)
-	// All-day events start at 00:00, and their reminders arrive at the notify time.
+	// All-day events start at 00:00 in calendars; their reminders count back from the day start.
 	ins := vevent(t, cal, "Insurance")
 	for _, want := range []string{"TRIGGER:PT9H", "TRIGGER:-PT15H", "TRIGGER:-P6DT15H"} {
 		if !strings.Contains(ins, want+"\r\n") {
@@ -123,7 +123,7 @@ func TestGenerate_AllDayVAlarmsAtNotifyTime(t *testing.T) {
 		}
 	}
 	if early := vevent(t, cal, "Early"); !strings.Contains(early, "TRIGGER:-P1DT16H30M\r\n") {
-		t.Errorf("per-event notify time not used:\n%s", early)
+		t.Errorf("per-event day start not used:\n%s", early)
 	}
 	// Each alarm has its own UID, so calendar apps don't merge them.
 	for _, uid := range []string{"UID:a-0d@gonotifier", "UID:a-1d@gonotifier", "UID:a-7d@gonotifier"} {

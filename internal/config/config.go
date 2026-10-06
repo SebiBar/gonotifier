@@ -17,15 +17,15 @@ import (
 )
 
 type Config struct {
-	NtfyURL           string // also where users log in: their username and password are checked by ntfy
-	DBPath            string
-	ExportDir         string // read-only JSON snapshot of each user's events, <username>.json; "" = disabled
-	FeedURL           string // public base URL the UI shows calendar feed links on, e.g. https://cal.example.com; "" = this server
-	TZ                *time.Location
-	CatchupWindow     time.Duration
-	DefaultNotifyTime events.TimeOnly
-	Port              int
-	LogLevel          slog.Level
+	NtfyURL         string // also where users log in: their username and password are checked by ntfy
+	DBPath          string
+	ExportDir       string // read-only JSON snapshot of each user's events, <username>.json; "" = disabled
+	FeedURL         string // public base URL the UI shows calendar feed links on, e.g. https://cal.example.com; "" = this server
+	TZ              *time.Location
+	CatchupWindow   time.Duration
+	DefaultDayStart events.TimeOnly
+	Port            int
+	LogLevel        slog.Level
 }
 
 // Load reads environment variables, validates them and returns the Config.
@@ -56,8 +56,8 @@ func Load() (*Config, error) {
 	if cfg.CatchupWindow, err = time.ParseDuration(envOr("CATCHUP_WINDOW", "24h")); err != nil || cfg.CatchupWindow < 0 {
 		errs = append(errs, fmt.Errorf("CATCHUP_WINDOW: invalid duration"))
 	}
-	if cfg.DefaultNotifyTime, err = events.ParseTimeOnly(envOr("DEFAULT_NOTIFY_TIME", "00:00")); err != nil {
-		errs = append(errs, fmt.Errorf("DEFAULT_NOTIFY_TIME: %w", err))
+	if cfg.DefaultDayStart, err = events.ParseTimeOnly(envOr("DAY_START", "00:00")); err != nil {
+		errs = append(errs, fmt.Errorf("DAY_START: %w", err))
 	}
 	if cfg.Port, err = strconv.Atoi(envOr("PORT", "8080")); err != nil || cfg.Port <= 0 || cfg.Port > 65535 {
 		errs = append(errs, fmt.Errorf("PORT: invalid port"))

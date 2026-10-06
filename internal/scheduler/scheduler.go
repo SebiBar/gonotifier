@@ -9,6 +9,7 @@ package scheduler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -121,10 +122,7 @@ func (s *Scheduler) Check(dryRun bool) (int, time.Time, error) {
 	for _, e := range evs {
 		lead := e.MaxLead()
 		scanned := 0
-		// Any reminder still worth sending fires at ≥ now-catchup, and fires come at most
-		// a day after their occurrence starts (an all-day event's "on the day" reminder
-		// at the notify time), so earlier occurrences can be skipped.
-		for occ := range e.Occurrences(now.Add(-s.cfg.CatchupWindow-24*time.Hour), s.cfg.TZ) {
+		for occ := range e.Occurrences(s.scanFrom(now), s.cfg.TZ) {
 			// Fires of this occurrence are ≥ occ-lead: once that is past both "now"
 			// (nothing due) and the best next time found, later occurrences can't matter.
 			if earliest := occ.Add(-lead); earliest.After(now) && !next.IsZero() && earliest.After(next) {
@@ -134,7 +132,7 @@ func (s *Scheduler) Check(dryRun bool) (int, time.Time, error) {
 				break
 			}
 			for _, off := range e.Reminders {
-				fire, err := events.FireTime(e, off, occ, s.cfg.DefaultNotifyTime)
+				fire, err := events.FireTime(e, off, occ, s.cfg.DefaultDayStart)
 				if err != nil {
 					continue
 				}
@@ -168,6 +166,13 @@ func (s *Scheduler) Check(dryRun bool) (int, time.Time, error) {
 		s.next.Store(next)
 	}
 	return sent, next, nil
+}
+
+// scanFrom is the earliest occurrence that can still have a reminder worth sending: those
+// fire at ≥ now-catchup, and at most a day after their occurrence starts (an all-day
+// event's day can start as late as 23:59).
+func (s *Scheduler) scanFrom(now time.Time) time.Time {
+	return now.Add(-s.cfg.CatchupWindow - 24*time.Hour)
 }
 
 // deliver sends one due reminder unless it was already sent, or its last send failed
@@ -261,7 +266,7 @@ func (s *Scheduler) AutoRemoveFinished(now time.Time) (int, error) {
 		if pending {
 			continue
 		}
-		if err := s.store.DeleteEvent(e.Owner, e.ID); err != nil && err != store.ErrNotFound {
+		if err := s.store.DeleteEvent(e.Owner, e.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return removed, err
 		}
 		slog.Info("auto-removed event", "event", e.Name, "date", e.Date)
@@ -273,9 +278,9 @@ func (s *Scheduler) AutoRemoveFinished(now time.Time) (int, error) {
 // hasPending reports whether a reminder of e fired within the catchup window but
 // hasn't been sent (e.g. ntfy was down), so it may still be retried.
 func (s *Scheduler) hasPending(e events.Event, now time.Time) (bool, error) {
-	for occ := range e.Occurrences(now.Add(-s.cfg.CatchupWindow-24*time.Hour), s.cfg.TZ) {
+	for occ := range e.Occurrences(s.scanFrom(now), s.cfg.TZ) {
 		for _, off := range e.Reminders {
-			fire, err := events.FireTime(e, off, occ, s.cfg.DefaultNotifyTime)
+			fire, err := events.FireTime(e, off, occ, s.cfg.DefaultDayStart)
 			if err != nil || fire.After(now) || now.Sub(fire) > s.cfg.CatchupWindow {
 				continue
 			}

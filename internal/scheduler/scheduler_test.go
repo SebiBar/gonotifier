@@ -30,7 +30,7 @@ func check(t *testing.T, s *Scheduler) (int, time.Time) {
 
 func TestCheck_SendsDue(t *testing.T) {
 	// At 09:05 both "1d" reminders (fired 09:00 today: 24h before the dentist, and at the
-	// notify time the day before the all-day birthday) are due and only 5 minutes late.
+	// day start the day before the all-day birthday) are due and only 5 minutes late.
 	s, env := setup(t, `[
 	{"name": "Dentist", "date": "2026-10-03T09:00", "reminders": ["1d"], "priority": "high"},
 	{"name": "Mom's birthday", "date": "1960-10-03", "repeat": "yearly", "reminders": ["1d"], "topic": "family"}
@@ -133,7 +133,7 @@ func TestCheck_SkipsOutsideCatchup(t *testing.T) {
 func TestCheck_RetriesAfterFailure(t *testing.T) {
 	s, env := setup(t, `[{"name":"Dentist","date":"2026-10-03T10:00","reminders":["1d"]}]`)
 	good := s.cfg.NtfyURL
-	s.cfg.NtfyURL = "http://127.0.0.1:1" // nothing listening
+	s.cfg.NtfyURL = testutil.DownURL(t)
 	if n, _ := check(t, s); n != 0 {
 		t.Fatalf("sent %d while ntfy was down", n)
 	}
@@ -147,7 +147,7 @@ func TestCheck_RetriesAfterFailure(t *testing.T) {
 func TestCheck_RetriesEveryFiveMinutes(t *testing.T) {
 	s, _ := setup(t, `[{"name":"Dentist","date":"2026-10-03T10:00","reminders":["1d"]}]`)
 	good := s.cfg.NtfyURL
-	s.cfg.NtfyURL = "http://127.0.0.1:1"
+	s.cfg.NtfyURL = testutil.DownURL(t)
 	check(t, s) // fails at 10:00
 
 	s.cfg.NtfyURL = good
@@ -240,7 +240,7 @@ func TestAutoRemoveFinished_WaitsForPendingReminder(t *testing.T) {
 	// Event at 09:30 today, 30m reminder fired 09:00 but not sent yet → keep for retry.
 	s, _ := setup(t, `[{"name":"Call","date":"2026-10-02T09:30","reminders":["30m"]}]`)
 	good := s.cfg.NtfyURL
-	s.cfg.NtfyURL = "http://127.0.0.1:1"
+	s.cfg.NtfyURL = testutil.DownURL(t)
 	check(t, s)
 	if n, _ := s.AutoRemoveFinished(testutil.FixedNow); n != 0 {
 		t.Fatal("removed an event with a pending reminder")
@@ -353,7 +353,7 @@ func TestCheck_AtTimeReminder(t *testing.T) {
 }
 
 func TestCheck_AllDayOnTheDay(t *testing.T) {
-	// "On the day" fires at the notify time (09:00), after the all-day event has started,
+	// "On time" fires at the day start (09:00), after the all-day event has started,
 	// and must not be skipped even with a short catch-up window.
 	s, env := setup(t, `[{"name":"Insurance","date":"2026-10-02","reminders":["0d"]}]`)
 	env.Cfg.CatchupWindow = 2 * time.Hour

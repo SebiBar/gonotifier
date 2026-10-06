@@ -89,11 +89,7 @@ func (s *server) apiCreateEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e.ID = "" // IDs are assigned by the server
-	if err := s.checkTiming(userOf(r), "", e); err != nil {
-		apiSaveError(w, err)
-		return
-	}
-	saved, err := s.store.CreateEvent(userOf(r), e)
+	saved, err := s.saveEvent(userOf(r), "", e)
 	if err != nil {
 		apiSaveError(w, err)
 		return
@@ -107,11 +103,7 @@ func (s *server) apiUpdateEvent(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := s.checkTiming(userOf(r), r.PathValue("id"), e); err != nil {
-		apiSaveError(w, err)
-		return
-	}
-	saved, err := s.store.UpdateEvent(userOf(r), r.PathValue("id"), e)
+	saved, err := s.saveEvent(userOf(r), r.PathValue("id"), e)
 	if err != nil {
 		apiSaveError(w, err)
 		return

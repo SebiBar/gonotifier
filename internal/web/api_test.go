@@ -91,13 +91,12 @@ func TestAPIUpdate_RoundTripsGetOutput(t *testing.T) {
 
 func TestAPIValidation(t *testing.T) {
 	_, mux, _ := newTestMux(t, sampleEvents)
+	// Which events are invalid is tested in package events; here: bad JSON and invalid
+	// events both get a 400 with an error.
 	cases := map[string]string{
 		"malformed":     `{"name":`,
 		"unknown field": `{"name":"A","date":"2026-12-01","reminders":["1d"],"bogus":1}`,
-		"bad date":      `{"name":"A","date":"2026-13-01","reminders":["1d"]}`,
-		"no reminders":  `{"name":"A","date":"2026-12-01","reminders":[]}`,
-		"bad priority":  `{"name":"A","date":"2026-12-01","reminders":["1d"],"priority":"meh"}`,
-		"bad repeat":    `{"name":"A","date":"2026-12-01","reminders":["1d"],"repeat":"hourly"}`,
+		"invalid event": `{"name":"A","date":"2026-13-01","reminders":["1d"]}`,
 	}
 	for name, body := range cases {
 		rr := do(mux, "POST", "/api/events", body, jsonHeaders)
@@ -125,8 +124,7 @@ func TestAPIExportImport(t *testing.T) {
 	env, mux, sched := newTestMux(t, sampleEvents)
 
 	export := do(mux, "GET", "/api/export", "", nil)
-	if export.Code != 200 || !strings.HasPrefix(export.Header().Get("Content-Type"), "application/json") ||
-		!strings.Contains(export.Body.String(), `"events": [`) {
+	if export.Code != 200 || !strings.HasPrefix(export.Header().Get("Content-Type"), "application/json") {
 		t.Fatalf("export: %d %s", export.Code, export.Body.String())
 	}
 

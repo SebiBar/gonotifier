@@ -42,7 +42,7 @@ var migrations = []string{
 		until       TEXT NOT NULL DEFAULT '',
 		reminders   TEXT NOT NULL,              -- JSON array, e.g. ["1d","30m"]
 		auto_remove INTEGER,                    -- NULL = default (true)
-		notify_time TEXT NOT NULL DEFAULT '',
+		day_start TEXT NOT NULL DEFAULT '',
 		topic       TEXT NOT NULL DEFAULT '',
 		priority    TEXT NOT NULL DEFAULT '',
 		tags        TEXT NOT NULL DEFAULT '',

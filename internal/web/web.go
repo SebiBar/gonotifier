@@ -154,6 +154,13 @@ func setTrigger(w http.ResponseWriter, closeDialog bool, message, kind string) {
 	w.Header().Set("HX-Trigger", string(b))
 }
 
+// toastError answers an htmx request with an error toast and leaves the page as it is.
+func toastError(w http.ResponseWriter, closeDialog bool, message string) {
+	w.Header().Set("HX-Reswap", "none")
+	setTrigger(w, closeDialog, message, "error")
+	w.WriteHeader(http.StatusOK)
+}
+
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -188,7 +195,7 @@ func (s *server) feed(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
 	w.Header().Set("Content-Disposition", `inline; filename="gonotifier.ics"`)
-	w.Write([]byte(ical.Generate(evs, s.cfg.TZ, s.cfg.DefaultNotifyTime)))
+	w.Write([]byte(ical.Generate(evs, s.cfg.TZ, s.cfg.DefaultDayStart)))
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
@@ -209,23 +216,33 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, status, resp)
 }
 
-// checkTiming rejects saving something that is already in the past (see events.CheckTiming).
-// editID is the event being edited, or "" when creating. Imports skip it, so old events
-// can be restored from a backup.
-func (s *server) checkTiming(user, editID string, e events.Event) error {
+// saveEvent creates (id "") or updates one of the user's events, for both the form and the
+// API: it rejects what is already in the past (events.CheckTiming; imports skip this so old
+// events can be restored from a backup), then validates and stores it.
+func (s *server) saveEvent(user, id string, e events.Event) (events.Event, error) {
+	if err := s.checkTiming(user, id, e); err != nil {
+		return e, err
+	}
+	if id == "" {
+		return s.store.CreateEvent(user, e)
+	}
+	return s.store.UpdateEvent(user, id, e)
+}
+
+func (s *server) checkTiming(user, id string, e events.Event) error {
 	events.Normalize(&e)
 	if len(events.Validate(e, nil, "")) > 0 {
 		return nil // the store reports those
 	}
 	var prev *events.Event
-	if editID != "" {
-		p, err := s.store.GetEvent(user, editID)
+	if id != "" {
+		p, err := s.store.GetEvent(user, id)
 		if err != nil {
 			return err
 		}
 		prev = &p
 	}
-	if errs := events.CheckTiming(e, prev, clock.Now().In(s.cfg.TZ), s.cfg.TZ, s.cfg.DefaultNotifyTime); len(errs) > 0 {
+	if errs := events.CheckTiming(e, prev, clock.Now().In(s.cfg.TZ), s.cfg.TZ, s.cfg.DefaultDayStart); len(errs) > 0 {
 		return events.ValidationError(errs)
 	}
 	return nil

@@ -39,22 +39,22 @@ var (
 )
 
 type formData struct {
-	Mode              string // "new" or "edit"
-	ID                string // event ID (edit)
-	Event             events.Event
-	Date              string // YYYY-MM-DD
-	Time              string // HH:MM, "" = all day
-	Repeat            string
-	Every             string
-	Until             string
-	Selected          []string // checked reminder chips
-	CustomReminders   string   // reminders that aren't chips
-	AutoRemove        bool
-	Priority          string
-	ShowMore          bool // open "More options" (when any of them is set)
-	Errors            []string
-	DefaultNotifyTime string
-	DefaultTopic      string
+	Mode            string // "new" or "edit"
+	ID              string // event ID (edit)
+	Event           events.Event
+	Date            string // YYYY-MM-DD
+	Time            string // HH:MM, "" = all day
+	Repeat          string
+	Every           string
+	Until           string
+	Selected        []string // checked reminder chips
+	CustomReminders string   // reminders that aren't chips
+	AutoRemove      bool
+	Priority        string
+	ShowMore        bool // open "More options" (when any of them is set)
+	Errors          []string
+	DefaultDayStart string
+	DefaultTopic    string
 }
 
 func (fd formData) isSelected(offset string) bool { return slices.Contains(fd.Selected, offset) }
@@ -68,10 +68,19 @@ func (fd formData) alpineState() string {
 	return state // strings and a bool always encode
 }
 
+// periodMinutes is events.PeriodDays as a JavaScript object, in minutes: {daily: 1440, …}.
+var periodMinutes = func() string {
+	var parts []string
+	for _, o := range repeatOptions[1:] { // all but "Never"
+		parts = append(parts, fmt.Sprintf("%s: %d", o.Value, events.PeriodDays[o.Value]*1440))
+	}
+	return "{" + strings.Join(parts, ", ") + "}"
+}()
+
 // fits is an Alpine.js expression: whether a reminder this many minutes before the event is
 // shorter than the repeat interval. Longer ones are hidden (and rejected by events.Validate).
 func fits(minutes int) string {
-	return fmt.Sprintf("!repeat || %d < {daily: 1440, weekly: 10080, monthly: 40320, yearly: 525600}[repeat] * Math.max(1, +every || 1)", minutes)
+	return fmt.Sprintf("!repeat || %d < %s[repeat] * Math.max(1, +every || 1)", minutes, periodMinutes)
 }
 
 // renderList returns the event list plus out-of-band refreshes of the count and "Upcoming".
@@ -107,8 +116,8 @@ func (s *server) newFormData(user string) formData {
 	return formData{
 		Mode: "new", AutoRemove: true, Priority: "default",
 		Date: clock.Now().In(s.cfg.TZ).Format("2006-01-02"), Selected: []string{"0m"},
-		DefaultNotifyTime: s.cfg.DefaultNotifyTime.String(),
-		DefaultTopic:      notify.DefaultTopic(user),
+		DefaultDayStart: s.cfg.DefaultDayStart.String(),
+		DefaultTopic:    notify.DefaultTopic(user),
 	}
 }
 
@@ -136,7 +145,7 @@ func fillForm(fd *formData, e events.Event) {
 	if fd.Priority == "" {
 		fd.Priority = "default"
 	}
-	fd.ShowMore = (e.NotifyTime != "" && !e.HasTime()) || e.Topic != "" || e.Tags != "" || fd.Priority != "default" || !fd.AutoRemove
+	fd.ShowMore = (e.DayStart != "" && !e.HasTime()) || e.Topic != "" || e.Tags != "" || fd.Priority != "default" || !fd.AutoRemove
 }
 
 func (s *server) newForm(w http.ResponseWriter, r *http.Request) {
@@ -161,13 +170,13 @@ func (s *server) editForm(w http.ResponseWriter, r *http.Request) {
 // eventFromForm builds an Event from the add/edit form submission.
 func eventFromForm(r *http.Request) events.Event {
 	e := events.Event{
-		Name:       r.FormValue("name"),
-		Date:       strings.TrimSpace(r.FormValue("date")),
-		Repeat:     r.FormValue("repeat"),
-		NotifyTime: r.FormValue("notify_time"),
-		Topic:      r.FormValue("topic"),
-		Priority:   r.FormValue("priority"),
-		Tags:       r.FormValue("tags"),
+		Name:     r.FormValue("name"),
+		Date:     strings.TrimSpace(r.FormValue("date")),
+		Repeat:   r.FormValue("repeat"),
+		DayStart: r.FormValue("day_start"),
+		Topic:    r.FormValue("topic"),
+		Priority: r.FormValue("priority"),
+		Tags:     r.FormValue("tags"),
 	}
 	if t := strings.TrimSpace(r.FormValue("time")); t != "" && e.Date != "" {
 		if len(t) > 5 {
@@ -196,15 +205,7 @@ func (s *server) submitForm(w http.ResponseWriter, r *http.Request, editID strin
 	}
 	user := userOf(r)
 	e := eventFromForm(r)
-	var saved events.Event
-	err := s.checkTiming(user, editID, e)
-	switch {
-	case err != nil:
-	case editID == "":
-		saved, err = s.store.CreateEvent(user, e)
-	default:
-		saved, err = s.store.UpdateEvent(user, editID, e)
-	}
+	saved, err := s.saveEvent(user, editID, e)
 
 	var verrs events.ValidationError
 	switch {
@@ -220,14 +221,10 @@ func (s *server) submitForm(w http.ResponseWriter, r *http.Request, editID strin
 		w.Header().Set("HX-Reswap", "innerHTML")
 		render(w, r, http.StatusOK, Form(fd))
 	case errors.Is(err, store.ErrNotFound):
-		w.Header().Set("HX-Reswap", "none")
-		setTrigger(w, true, "Event no longer exists", "error")
-		w.WriteHeader(http.StatusOK)
+		toastError(w, true, "Event no longer exists")
 	case err != nil:
 		slog.Error("save event", "err", err)
-		w.Header().Set("HX-Reswap", "none")
-		setTrigger(w, false, "Failed to save: "+err.Error(), "error")
-		w.WriteHeader(http.StatusOK)
+		toastError(w, false, "Failed to save: "+err.Error())
 	default:
 		s.sched.Wake()
 		msg := "Event added"
@@ -255,9 +252,7 @@ func (s *server) deleteEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	case err != nil:
 		slog.Error("delete event", "err", err)
-		w.Header().Set("HX-Reswap", "none")
-		setTrigger(w, false, "Failed to delete: "+err.Error(), "error")
-		w.WriteHeader(http.StatusOK)
+		toastError(w, false, "Failed to delete: "+err.Error())
 		return
 	}
 	s.sched.Wake()
@@ -276,9 +271,7 @@ func (s *server) resetFeed(w http.ResponseWriter, r *http.Request) {
 	token, err := s.store.ResetFeedToken(userOf(r))
 	if err != nil {
 		slog.Error("reset feed", "err", err)
-		w.Header().Set("HX-Reswap", "none")
-		setTrigger(w, false, "Failed to reset the link: "+err.Error(), "error")
-		w.WriteHeader(http.StatusOK)
+		toastError(w, false, "Failed to reset the link: "+err.Error())
 		return
 	}
 	setTrigger(w, false, "New link created: copy it into your calendar app", "success")

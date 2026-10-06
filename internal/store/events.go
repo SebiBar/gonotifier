@@ -24,7 +24,7 @@ func newID() string {
 	return hex.EncodeToString(b)
 }
 
-const eventColumns = `id, name, date, repeat, every, until, reminders, auto_remove, notify_time, topic, priority, tags, owner`
+const eventColumns = `id, name, date, repeat, every, until, reminders, auto_remove, day_start, topic, priority, tags, owner`
 
 type scanner interface{ Scan(...any) error }
 
@@ -33,7 +33,7 @@ func scanEvent(row scanner) (events.Event, error) {
 	var reminders string
 	var autoRemove sql.NullBool
 	if err := row.Scan(&e.ID, &e.Name, &e.Date, &e.Repeat, &e.Every, &e.Until, &reminders, &autoRemove,
-		&e.NotifyTime, &e.Topic, &e.Priority, &e.Tags, &e.Owner); err != nil {
+		&e.DayStart, &e.Topic, &e.Priority, &e.Tags, &e.Owner); err != nil {
 		return e, err
 	}
 	if err := json.Unmarshal([]byte(reminders), &e.Reminders); err != nil {
@@ -278,10 +278,10 @@ func upsert(db execer, e events.Event) error {
 		ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name, date = excluded.date, repeat = excluded.repeat, every = excluded.every,
 			until = excluded.until, reminders = excluded.reminders, auto_remove = excluded.auto_remove,
-			notify_time = excluded.notify_time, topic = excluded.topic, priority = excluded.priority,
+			day_start = excluded.day_start, topic = excluded.topic, priority = excluded.priority,
 			tags = excluded.tags
 		WHERE events.owner = excluded.owner`,
 		e.ID, e.Name, e.Date, e.Repeat, e.Every, e.Until, string(reminders), autoRemove,
-		e.NotifyTime, e.Topic, e.Priority, e.Tags, e.Owner, clock.Now().UTC().Format(dbTimeFormat))
+		e.DayStart, e.Topic, e.Priority, e.Tags, e.Owner, clock.Now().UTC().Format(dbTimeFormat))
 	return err
 }

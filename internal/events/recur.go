@@ -94,19 +94,18 @@ func daysIn(m time.Month, year int) int {
 	return time.Date(year, m+1, 0, 0, 0, 0, 0, time.UTC).Day()
 }
 
-// periodDays is the shortest possible gap between occurrences, in days.
-func (e Event) periodDays() int {
-	switch e.Repeat {
-	case Daily:
-		return e.Interval()
-	case Weekly:
-		return 7 * e.Interval()
-	case Monthly:
-		return 28 * e.Interval()
-	case Yearly:
-		return 365 * e.Interval()
-	}
-	return 0
+// PeriodDays is the shortest gap between occurrences of each repeat, in days (with an
+// interval of 1). Reminders must be shorter than it; see Validate.
+var PeriodDays = map[string]int{Daily: 1, Weekly: 7, Monthly: 28, Yearly: 365}
+
+// periodDays is the shortest possible gap between the event's occurrences, in days (0 = no repeat).
+func (e Event) periodDays() int { return PeriodDays[e.Repeat] * e.Interval() }
+
+// CalendarDays counts calendar days from a to b (in a's time zone), ignoring the time of day.
+func CalendarDays(a, b time.Time) int {
+	ay, am, ad := a.Date()
+	by, bm, bd := b.In(a.Location()).Date()
+	return int(time.Date(by, bm, bd, 0, 0, 0, 0, time.UTC).Sub(time.Date(ay, am, ad, 0, 0, 0, 0, time.UTC)) / (24 * time.Hour))
 }
 
 // DescribeInterval renders how often the event repeats: "every day", "every 3 months".

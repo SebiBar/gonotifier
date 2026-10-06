@@ -169,10 +169,7 @@ func (s *server) login(w http.ResponseWriter, r *http.Request) {
 		fail(http.StatusInternalServerError, "Something went wrong. Try again.")
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: cookie, Path: "/", MaxAge: int(sessionTTL.Seconds()),
-		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isHTTPS(r),
-	})
+	setSessionCookie(w, r, cookie, sessionTTL)
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
@@ -180,8 +177,21 @@ func (s *server) logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {
 		s.store.DeleteSession(c.Value)
 	}
-	http.SetCookie(w, &http.Cookie{Name: sessionCookie, Path: "/", MaxAge: -1, HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isHTTPS(r)})
+	setSessionCookie(w, r, "", -1) // delete it
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
+}
+
+// setSessionCookie sets the session cookie for maxAge (negative deletes it). It is never
+// readable by scripts, only sent from this site, and HTTPS-only when the site is.
+func setSessionCookie(w http.ResponseWriter, r *http.Request, value string, maxAge time.Duration) {
+	seconds := int(maxAge.Seconds())
+	if maxAge < 0 {
+		seconds = -1
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name: sessionCookie, Value: value, Path: "/", MaxAge: seconds,
+		HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isHTTPS(r),
+	})
 }
 
 // isHTTPS reports whether the browser reached us over HTTPS (directly or through a proxy).
@@ -211,10 +221,7 @@ func (s *server) sessionUser(w http.ResponseWriter, r *http.Request) string {
 		} // if ntfy is just unreachable, keep them logged in
 	}
 	if err := s.store.RenewSession(c.Value, sessionTTL); err == nil {
-		http.SetCookie(w, &http.Cookie{
-			Name: sessionCookie, Value: c.Value, Path: "/", MaxAge: int(sessionTTL.Seconds()),
-			HttpOnly: true, SameSite: http.SameSiteLaxMode, Secure: isHTTPS(r),
-		})
+		setSessionCookie(w, r, c.Value, sessionTTL)
 	}
 	return username
 }

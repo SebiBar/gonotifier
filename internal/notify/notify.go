@@ -142,7 +142,7 @@ func Format(event events.Event, offset string, occ, fire time.Time) (title, mess
 	if err != nil {
 		return "Reminder", event.Name, "bell"
 	}
-	days := calendarDays(fire, occ)
+	days := events.CalendarDays(fire, occ)
 	inDays := events.HumanOffset(time.Duration(days)*24*time.Hour, "d")
 	date, clock := occ.Format("Jan 2"), occ.Format("15:04")
 
@@ -203,7 +203,7 @@ func Format(event events.Event, offset string, occ, fire time.Time) (title, mess
 //	"Dentist is tomorrow at 10:00 (delayed reminder)"
 //	"Renew car insurance is today! (delayed reminder)"
 func FormatLate(event events.Event, occurrence, now time.Time) string {
-	days := calendarDays(now, occurrence)
+	days := events.CalendarDays(now, occurrence)
 	var when string
 	if event.HasTime() {
 		clock := occurrence.Format("15:04")
@@ -237,11 +237,4 @@ func FormatLate(event events.Event, occurrence, now time.Time) string {
 		}
 	}
 	return event.Name + " " + when + " (delayed reminder)"
-}
-
-// calendarDays counts calendar days from a to b, ignoring the time of day.
-func calendarDays(a, b time.Time) int {
-	ay, am, ad := a.Date()
-	by, bm, bd := b.In(a.Location()).Date()
-	return int(time.Date(by, bm, bd, 0, 0, 0, 0, time.UTC).Sub(time.Date(ay, am, ad, 0, 0, 0, 0, time.UTC)) / (24 * time.Hour))
 }

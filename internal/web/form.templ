@@ -91,7 +91,7 @@ templ Form(fd formData) {
 						</label>
 					}
 				</div>
-				<input type="text" name="custom_reminders" value={ fd.CustomReminders } placeholder="Other, e.g. 10m" aria-label="Other reminders" autocomplete="off"/>
+				<input type="text" name="custom_reminders" value={ fd.CustomReminders } placeholder="Other, e.g. 5m" aria-label="Other reminders" autocomplete="off"/>
 			</div>
 			<button type="button" class="disclosure" :class="more && 'open'" @click="more = !more" :aria-expanded="more">
 				<span>More options</span>
@@ -119,8 +119,8 @@ templ Form(fd formData) {
 				</div>
 				<label class="field" x-show="!time">
 					<span class="field-label">All-day event starts at</span>
-					<input type="time" name="notify_time" value={ fd.Event.NotifyTime }/>
-					<span class="hint">Reminders count back from this time. Leave empty for the default ({ fd.DefaultNotifyTime }).</span>
+					<input type="time" name="day_start" value={ fd.Event.DayStart }/>
+					<span class="hint">Reminders count back from this time. Leave empty for the default ({ fd.DefaultDayStart }).</span>
 				</label>
 				<div class="row2">
 					<label class="field">
