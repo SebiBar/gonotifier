@@ -72,22 +72,6 @@ func Load() (*Config, error) {
 	return cfg, nil
 }
 
-// Removed lists settings from older versions that are now ignored, and what replaced them.
-func Removed() map[string]string {
-	gone := map[string]string{}
-	for key, why := range map[string]string{
-		"NTFY_TOKEN":         "reminders are sent with each user's own ntfy token, created when they log in",
-		"NTFY_DEFAULT_TOPIC": "each user's default topic is <username>_reminders",
-		"FEED_TOKEN":         "each user has their own calendar feed URL, shown in the web UI",
-		"EXPORT_FILE":        "use EXPORT_DIR (one file per user)",
-	} {
-		if os.Getenv(key) != "" {
-			gone[key] = why
-		}
-	}
-	return gone
-}
-
 func envOr(key, def string) string {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		return v

@@ -22,8 +22,8 @@ import (
 //	  DTSTART: (date-only → VALUE=DATE:YYYYMMDD, datetime → TZID=...:YYYYMMDDTHHMMSS)
 //	  For repeats: RRULE:FREQ=DAILY|WEEKLY|MONTHLY|YEARLY[;INTERVAL=n][;UNTIL=…]
 //	  For each reminder: VALARM with UID and TRIGGER relative to the start, matching
-//	  events.FireTime: -PT30M (30 minutes before), PT0S (at the time), and for all-day
-//	  events the notify time, e.g. with 09:00: -PT15H (the day before), PT9H (on the day)
+//	  events.FireTime: -PT30M (30 minutes before), PT0S (on time); all-day events count
+//	  from the notify time, e.g. with 09:00: PT9H (on time), -PT15H (1 day before)
 //	  END:VEVENT
 //	END:VCALENDAR
 //
@@ -116,23 +116,15 @@ func rrule(e events.Event, start time.Time, loc *time.Location) string {
 }
 
 // icalTrigger returns when a reminder fires relative to the event's start, as an RFC 5545
-// duration, matching events.FireTime: exactly the offset before a timed event, and for an
-// all-day event (which starts at 00:00) N days before at the notify time.
+// duration, matching events.FireTime: the offset before the event's time, or for an all-day
+// event (which starts at 00:00 in the calendar) before the notify time on its day.
 func icalTrigger(e events.Event, offset string, def events.TimeOnly) (string, error) {
 	dur, _, err := events.ParseOffset(offset)
 	if err != nil {
 		return "", err
 	}
-	rel := -dur
-	if !e.HasTime() {
-		nt := def
-		if t, err := events.ParseTimeOnly(e.NotifyTime); err == nil {
-			nt = t
-		}
-		days := dur / (24 * time.Hour)
-		rel = -days*24*time.Hour + time.Duration(nt.Hour)*time.Hour + time.Duration(nt.Minute)*time.Minute
-	}
-	return formatDuration(rel), nil
+	day := time.Date(2000, 1, 1, 0, 0, 0, 0, time.UTC) // any day: only the clock time matters
+	return formatDuration(e.ReminderStart(day, def).Sub(day) - dur), nil
 }
 
 // formatDuration renders d as an RFC 5545 duration: -P1DT2H30M, PT9H, PT0S.

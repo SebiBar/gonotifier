@@ -46,11 +46,3 @@ func TestLoad_FeedURL(t *testing.T) {
 		}
 	}
 }
-
-func TestRemoved(t *testing.T) {
-	t.Setenv("FEED_TOKEN", "0123456789abcdef")
-	t.Setenv("NTFY_TOKEN", "")
-	if got := Removed(); len(got) != 1 || got["FEED_TOKEN"] == "" {
-		t.Errorf("Removed() = %v", got)
-	}
-}

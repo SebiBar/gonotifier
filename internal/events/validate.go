@@ -62,10 +62,7 @@ func Normalize(e *Event) {
 	e.Reminders = SplitReminders(strings.Join(e.Reminders, ","))
 	for i, rem := range e.Reminders {
 		if dur, _, err := ParseOffset(rem); err == nil && dur == 0 {
-			e.Reminders[i] = "0m" // "at the time": 0d, 0h and 0m all mean the same
-			if !e.HasTime() {
-				e.Reminders[i] = "0d" // "on the day"
-			}
+			e.Reminders[i] = "0m" // "on time": 0d, 0h and 0m all mean the same
 		}
 	}
 	e.Reminders = SplitReminders(strings.Join(e.Reminders, ","))
@@ -129,13 +126,9 @@ func Validate(e Event, existing []Event, selfID string) []string {
 		errs = append(errs, fmt.Sprintf("Pick at most %d reminders.", MaxReminders))
 	}
 	for _, rem := range e.Reminders {
-		dur, unit, err := ParseOffset(rem)
+		dur, _, err := ParseOffset(rem)
 		if err != nil {
 			errs = append(errs, fmt.Sprintf("Invalid reminder %q: use a number of minutes, hours or days, e.g. 30m, 2h, 3d.", rem))
-			continue
-		}
-		if unit != "d" && !e.HasTime() && dateErr == nil {
-			errs = append(errs, fmt.Sprintf("Reminder %q: all-day events remind in days (e.g. 0d, 1d). Give the event a time to remind hours or minutes before.", ReminderLabel(rem)))
 			continue
 		}
 		// A reminder must come after the previous occurrence, or it would fire "for"

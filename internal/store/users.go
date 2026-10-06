@@ -61,37 +61,12 @@ func (s *Store) Usernames() ([]string, error) {
 	return out, rows.Err()
 }
 
-// CreateUser adds a user with a fresh feed token. The very first user also takes over
-// events and history from before gonotifier had users (empty owner).
+// CreateUser adds a user with a fresh feed token.
 func (s *Store) CreateUser(username, ntfyToken string) (User, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	u := User{Username: username, NtfyToken: ntfyToken, FeedToken: randomToken()}
-	tx, err := s.db.Begin()
-	if err != nil {
-		return u, err
-	}
-	defer tx.Rollback()
-	var others int
-	if err := tx.QueryRow(`SELECT count(*) FROM users`).Scan(&others); err != nil {
-		return u, err
-	}
-	if _, err := tx.Exec(`INSERT INTO users (username, ntfy_token, feed_token, created_at) VALUES (?, ?, ?, ?)`,
-		u.Username, u.NtfyToken, u.FeedToken, clock.Now().UTC().Format(dbTimeFormat)); err != nil {
-		return u, err
-	}
-	if others == 0 {
-		for _, table := range []string{"events", "sent"} {
-			if _, err := tx.Exec(`UPDATE `+table+` SET owner = ? WHERE owner = ''`, username); err != nil {
-				return u, err
-			}
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return u, err
-	}
-	s.version.Add(1)
-	return u, nil
+	_, err := s.db.Exec(`INSERT INTO users (username, ntfy_token, feed_token, created_at) VALUES (?, ?, ?, ?)`,
+		u.Username, u.NtfyToken, u.FeedToken, clock.Now().UTC().Format(dbTimeFormat))
+	return u, err
 }
 
 // SetNtfyToken replaces the token used to send the user's reminders.

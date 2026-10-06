@@ -35,9 +35,6 @@ func main() {
 		os.Exit(1)
 	}
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: cfg.LogLevel})))
-	for key, why := range config.Removed() {
-		slog.Warn("setting no longer used: "+key, "instead", why)
-	}
 
 	st, err := store.Open(cfg.DBPath)
 	if err != nil {

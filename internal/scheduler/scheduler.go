@@ -119,9 +119,6 @@ func (s *Scheduler) Check(dryRun bool) (int, time.Time, error) {
 	var next time.Time
 
 	for _, e := range evs {
-		if e.Owner == "" {
-			continue // from before users existed: sent once someone logs in and owns it
-		}
 		lead := e.MaxLead()
 		scanned := 0
 		// Any reminder still worth sending fires at ≥ now-catchup, and fires come at most
@@ -186,7 +183,7 @@ func (s *Scheduler) deliver(e events.Event, off string, occ, fire, now time.Time
 		return false, nil
 	}
 
-	title, msg, tags := notify.Format(e, off, occ)
+	title, msg, tags := notify.Format(e, off, occ, fire)
 	if now.Sub(fire) > lateAfter {
 		msg = notify.FormatLate(e, occ, now)
 	}

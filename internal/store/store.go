@@ -20,37 +20,7 @@ const dbTimeFormat = "2006-01-02T15:04:05Z"
 // migrations run in order; PRAGMA user_version records how many have been applied.
 // Append new ones — never edit or reorder existing entries.
 var migrations = []string{
-	// 1: events + sent log
-	`CREATE TABLE events (
-		id          TEXT PRIMARY KEY,
-		name        TEXT NOT NULL,
-		date        TEXT NOT NULL,              -- YYYY-MM-DD or YYYY-MM-DDTHH:MM
-		repeat      TEXT NOT NULL DEFAULT '',   -- '', daily, weekly, monthly, yearly
-		every       INTEGER NOT NULL DEFAULT 0,
-		until       TEXT NOT NULL DEFAULT '',
-		reminders   TEXT NOT NULL,              -- JSON array, e.g. ["1d","12h"]
-		auto_remove INTEGER,                    -- NULL = default (true)
-		notify_time TEXT NOT NULL DEFAULT '',
-		topic       TEXT NOT NULL DEFAULT '',
-		priority    TEXT NOT NULL DEFAULT '',
-		tags        TEXT NOT NULL DEFAULT '',
-		created_at  TEXT NOT NULL
-	);
-	CREATE TABLE sent (
-		id          TEXT PRIMARY KEY,           -- sha256(eventID+offset+occurrenceDate)[:16]
-		event_id    TEXT NOT NULL,
-		event_name  TEXT NOT NULL,
-		offset      TEXT NOT NULL,
-		target_date TEXT NOT NULL,              -- occurrence date, YYYY-MM-DD
-		fire_time   TEXT NOT NULL,
-		sent_at     TEXT NOT NULL,
-		message     TEXT NOT NULL
-	);
-	CREATE INDEX idx_sent_event ON sent(event_id, target_date);
-	CREATE INDEX idx_sent_at ON sent(sent_at);`,
-
-	// 2: users (logins come from ntfy), sessions, and an owner on events and sent reminders.
-	// Rows from before this migration have owner '' until the first user claims them (CreateUser).
+	// 1: users (logins come from ntfy), their sessions and events, and the log of sent reminders
 	`CREATE TABLE users (
 		username   TEXT PRIMARY KEY,           -- ntfy username
 		ntfy_token TEXT NOT NULL,              -- the user's ntfy token, used to send their reminders
@@ -62,10 +32,37 @@ var migrations = []string{
 		username   TEXT NOT NULL,
 		expires_at TEXT NOT NULL
 	);
-	ALTER TABLE events ADD COLUMN owner TEXT NOT NULL DEFAULT '';
-	ALTER TABLE sent ADD COLUMN owner TEXT NOT NULL DEFAULT '';
+	CREATE TABLE events (
+		id          TEXT PRIMARY KEY,
+		owner       TEXT NOT NULL,              -- username
+		name        TEXT NOT NULL,
+		date        TEXT NOT NULL,              -- YYYY-MM-DD or YYYY-MM-DDTHH:MM
+		repeat      TEXT NOT NULL DEFAULT '',   -- '', daily, weekly, monthly, yearly
+		every       INTEGER NOT NULL DEFAULT 0,
+		until       TEXT NOT NULL DEFAULT '',
+		reminders   TEXT NOT NULL,              -- JSON array, e.g. ["1d","30m"]
+		auto_remove INTEGER,                    -- NULL = default (true)
+		notify_time TEXT NOT NULL DEFAULT '',
+		topic       TEXT NOT NULL DEFAULT '',
+		priority    TEXT NOT NULL DEFAULT '',
+		tags        TEXT NOT NULL DEFAULT '',
+		created_at  TEXT NOT NULL
+	);
+	CREATE TABLE sent (
+		id          TEXT PRIMARY KEY,           -- sha256(eventID+offset+occurrenceDate)[:16]
+		owner       TEXT NOT NULL,
+		event_id    TEXT NOT NULL,
+		event_name  TEXT NOT NULL,
+		offset      TEXT NOT NULL,
+		target_date TEXT NOT NULL,              -- occurrence date, YYYY-MM-DD
+		fire_time   TEXT NOT NULL,
+		sent_at     TEXT NOT NULL,
+		message     TEXT NOT NULL
+	);
 	CREATE INDEX idx_events_owner ON events(owner);
-	CREATE INDEX idx_sent_owner ON sent(owner, sent_at);`,
+	CREATE INDEX idx_sent_event ON sent(event_id, target_date);
+	CREATE INDEX idx_sent_owner ON sent(owner, sent_at);
+	CREATE INDEX idx_sent_at ON sent(sent_at);`,
 }
 
 type Store struct {

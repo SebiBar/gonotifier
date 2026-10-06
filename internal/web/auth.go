@@ -122,7 +122,6 @@ func (s *server) signIn(authorization string) (string, error) {
 		return "", err
 	}
 	slog.Info("new user", "user", username)
-	s.sched.Wake() // the first user takes over events from before users existed
 	return username, nil
 }
 

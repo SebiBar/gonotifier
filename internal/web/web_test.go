@@ -155,7 +155,7 @@ func TestAddEvent_Success(t *testing.T) {
 		t.Errorf("HX-Trigger = %q", trig)
 	}
 	e := get(t, env, "Renew car insurance")
-	if e.Date != "2026-12-01" || strings.Join(e.Reminders, ",") != "0d,1d,7d" || e.AutoRemove != nil || e.Priority != "" || e.Repeat != "" {
+	if e.Date != "2026-12-01" || strings.Join(e.Reminders, ",") != "0m,1d,7d" || e.AutoRemove != nil || e.Priority != "" || e.Repeat != "" {
 		t.Errorf("stored event = %+v", e)
 	}
 	body := rr.Body.String()
@@ -375,10 +375,13 @@ func TestNoEmojiInUI(t *testing.T) {
 	}
 }
 
-func TestForm_RemindersFollowTheEventType(t *testing.T) {
+func TestForm_Reminders(t *testing.T) {
 	env, mux, _ := newTestMux(t, "")
 	body := do(mux, "GET", "/events/new", "", nil).Body.String()
-	for _, want := range []string{`value="0m"`, ">On time", `value="0d"`, ">On the day", `x-show="time"`, `x-show="!time"`} {
+	// Like calendar apps: today's date and "On time" are filled in, so a simple event needs
+	// only a name (and a time).
+	for _, want := range []string{`name="date" value="2026-10-02"`, `value="0m" checked`, ">On time", ">10 min", ">1 week",
+		`placeholder="Other, e.g. 10m"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("new form missing %q", want)
 		}
@@ -387,23 +390,27 @@ func TestForm_RemindersFollowTheEventType(t *testing.T) {
 	if !strings.Contains(body, `x-show="!repeat || 10080 &lt; {daily: 1440`) {
 		t.Error("reminder choices aren't hidden by the repeat interval")
 	}
+	// The all-day start time can be set: it used to be disabled whenever the time was empty.
+	if strings.Contains(body, `:disabled="time"`) || !strings.Contains(body, `name="notify_time"`) {
+		t.Error("all-day start time field is disabled or missing")
+	}
 
 	// "On time" on a daily event: for simple reminders like taking medicine.
 	form := url.Values{"name": {"Take medicine"}, "date": {"2026-10-02"}, "time": {"20:00"}, "repeat": {"daily"}, "reminders": {"0m"}}
 	if rr := do(mux, "POST", "/events", form.Encode(), formHeaders); rr.Header().Get("HX-Retarget") != "" {
-		t.Fatalf("at-time reminder rejected: %s", rr.Body.String())
+		t.Fatalf("on-time reminder rejected: %s", rr.Body.String())
 	}
 	if e := get(t, env, "Take medicine"); strings.Join(e.Reminders, ",") != "0m" {
 		t.Errorf("reminders = %v", e.Reminders)
 	}
 	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `<span class="chip">on time</span>`) {
-		t.Error("event list doesn't show the at-time reminder")
+		t.Error("event list doesn't show the on-time reminder")
 	}
 
-	// Hours on an all-day event don't make sense: rejected with a hint.
-	form = url.Values{"name": {"Insurance"}, "date": {"2026-12-01"}, "custom_reminders": {"2h"}}
-	if rr := do(mux, "POST", "/events", form.Encode(), formHeaders); !strings.Contains(rr.Body.String(), "all-day events remind in days") {
-		t.Errorf("hours on all-day accepted: %s", rr.Body.String())
+	// All-day events take the same reminders: they count back from the start of the day.
+	form = url.Values{"name": {"Insurance"}, "date": {"2026-12-01"}, "reminders": {"1h", "1d"}}
+	if rr := do(mux, "POST", "/events", form.Encode(), formHeaders); rr.Header().Get("HX-Retarget") != "" {
+		t.Errorf("hours on an all-day event rejected: %s", rr.Body.String())
 	}
 }
 

@@ -97,15 +97,12 @@ func formatDate(e events.Event, t time.Time) string {
 	return t.Format(layout)
 }
 
-// reminderLabels shows reminders as stored ("30m", "1d"), except the ones without an offset.
+// reminderLabels shows reminders as stored ("30m", "1d"), except "on time".
 func reminderLabels(e events.Event) []string {
 	out := make([]string, 0, len(e.Reminders))
 	for _, r := range e.Reminders {
-		switch {
-		case r == "0m":
+		if r == "0m" {
 			r = "on time"
-		case r == "0d":
-			r = "on the day"
 		}
 		out = append(out, r)
 	}

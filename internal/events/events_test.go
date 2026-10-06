@@ -97,7 +97,8 @@ func TestFireTime(t *testing.T) {
 		{timed, "0m", occ, occ}, // at the time
 		// All-day: N days before, at the notify time.
 		{allDay, "1d", allDayOcc, at(2026, 11, 30, 9, 0)},
-		{allDay, "0d", allDayOcc, at(2026, 12, 1, 9, 0)}, // on the day
+		{allDay, "0m", allDayOcc, at(2026, 12, 1, 9, 0)}, // on time: when the day starts (notify time)
+		{allDay, "1h", allDayOcc, at(2026, 12, 1, 8, 0)}, // hours count back from it too
 		{events.Event{Date: "2026-12-01", NotifyTime: "07:45"}, "3d", allDayOcc, at(2026, 11, 28, 7, 45)},
 	}
 	for _, c := range cases {
@@ -222,7 +223,6 @@ func TestValidate(t *testing.T) {
 		"no reminders":      {Name: "A", Date: "2026-12-01"},
 		"bad reminder":      {Name: "A", Date: "2026-12-01", Reminders: []string{"5x"}},
 		"bad repeat":        {Name: "A", Date: "2026-12-01", Repeat: "hourly", Reminders: []string{"1d"}},
-		"hours on all-day":  {Name: "A", Date: "2026-12-01", Reminders: []string{"2h"}},
 		"until before date": {Name: "A", Date: "2026-12-01", Repeat: events.Weekly, Until: "2026-11-01", Reminders: []string{"1d"}},
 		"bad until":         {Name: "A", Date: "2026-12-01", Repeat: events.Weekly, Until: "soon", Reminders: []string{"1d"}},
 		"lead ≥ period":     {Name: "A", Date: "2026-12-01", Repeat: events.Daily, Reminders: []string{"1d"}},
@@ -312,9 +312,9 @@ func TestNormalize_ZeroReminders(t *testing.T) {
 	if strings.Join(timed.Reminders, ",") != "0m,30m" || timed.NotifyTime != "" {
 		t.Errorf("timed: reminders %v, notify time %q", timed.Reminders, timed.NotifyTime)
 	}
-	allDay := events.Event{Date: "2026-12-01", Reminders: []string{"0m", "1d"}}
+	allDay := events.Event{Date: "2026-12-01", Reminders: []string{"0d", "1d"}}
 	events.Normalize(&allDay)
-	if strings.Join(allDay.Reminders, ",") != "0d,1d" {
+	if strings.Join(allDay.Reminders, ",") != "0m,1d" {
 		t.Errorf("all-day: reminders %v", allDay.Reminders)
 	}
 }
@@ -333,8 +333,6 @@ func TestValidate_Messages(t *testing.T) {
 		// The repeat's end date isn't part of it (it used to come out as "weekly until dec 31, 2027").
 		{events.Event{Name: "A", Date: "2026-12-01", Repeat: events.Monthly, Every: 2, Until: "2027-12-31", Reminders: []string{"90d"}},
 			`Reminder "90 days before" must be shorter than the repeat interval (every 2 months).`},
-		{events.Event{Name: "A", Date: "2026-12-01", Reminders: []string{"2h"}},
-			`Reminder "2 hours before": all-day events remind in days`},
 		{events.Event{Name: "A", Date: "2026-12-01", Reminders: []string{"5x"}},
 			`Invalid reminder "5x": use a number of minutes, hours or days, e.g. 30m, 2h, 3d.`},
 		{events.Event{Name: "A", Date: "2026-12-01", Reminders: []string{"0d", "1d", "2d", "3d", "4d", "5d", "6d", "7d", "8d", "9d", "10d"}},
@@ -349,7 +347,7 @@ func TestValidate_Messages(t *testing.T) {
 
 func TestReminderLabel(t *testing.T) {
 	for off, want := range map[string]string{
-		"0m": "On time", "0d": "On the day", "30m": "30 minutes before", "1h": "1 hour before",
+		"0m": "On time", "0d": "On time", "30m": "30 minutes before", "1h": "1 hour before",
 		"1d": "1 day before", "3d": "3 days before", "7d": "1 week before", "14d": "2 weeks before",
 		"30d": "30 days before", "bogus": "bogus",
 	} {
@@ -381,7 +379,7 @@ func TestCheckTiming(t *testing.T) {
 		{"date passed", events.Event{Name: "A", Date: "2026-10-01T09:00", Reminders: []string{"1h"}}, nil, "This event has already passed."},
 		{"earlier today", events.Event{Name: "A", Date: "2026-10-02T08:00", Reminders: []string{"0m"}}, nil, "This event has already passed."},
 		{"all-day today is still on", events.Event{Name: "A", Date: "2026-10-02", Reminders: []string{"0d"}}, nil,
-			`Reminder "On the day" would have been sent Oct 2 at 09:00`},
+			`Reminder "On time" would have been sent Oct 2 at 09:00`},
 		{"all-day today, later notify time", events.Event{Name: "A", Date: "2026-10-02", NotifyTime: "18:00", Reminders: []string{"0d"}}, nil, ""},
 		{"daily repeat started in the past", events.Event{Name: "A", Date: "2026-01-01T08:00", Repeat: events.Daily, Reminders: []string{"0m"}}, nil, ""},
 		{"repeat already ended", events.Event{Name: "A", Date: "2026-01-01", Repeat: events.Weekly, Until: "2026-09-01", Reminders: []string{"1d"}}, nil,
@@ -412,5 +410,16 @@ func TestCheckTiming(t *testing.T) {
 		if (c.want == "") != (got == "") || !strings.Contains(got, c.want) {
 			t.Errorf("%s: got %q, want %q", c.name, got, c.want)
 		}
+	}
+}
+
+func TestFireTime_DaysKeepTheClockTimeAcrossDST(t *testing.T) {
+	// DST ends Nov 1 2026 in New York: "1d" before Nov 1 10:00 is Oct 31 10:00 (25 hours earlier).
+	e := events.Event{Date: "2026-11-01T10:00"}
+	if got, _ := events.FireTime(e, "1d", at(2026, 11, 1, 10, 0), nineAM); !got.Equal(at(2026, 10, 31, 10, 0)) {
+		t.Errorf("1d = %v", got)
+	}
+	if got, _ := events.FireTime(e, "24h", at(2026, 11, 1, 10, 0), nineAM); !got.Equal(at(2026, 10, 31, 11, 0)) {
+		t.Errorf("24h = %v (exact hours)", got)
 	}
 }

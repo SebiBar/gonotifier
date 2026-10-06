@@ -11,6 +11,7 @@ import (
 
 	"github.com/a-h/templ"
 
+	"github.com/sebibar/gonotifier/internal/clock"
 	"github.com/sebibar/gonotifier/internal/events"
 	"github.com/sebibar/gonotifier/internal/notify"
 	"github.com/sebibar/gonotifier/internal/store"
@@ -25,15 +26,10 @@ type chip struct {
 }
 
 var (
-	// Like calendar apps: events at a time get exact durations, all-day events get days
-	// (sent at the notify time).
-	timedChips = []chip{
+	// How long before the event's start (its time, or the start of an all-day event's day).
+	reminderChips = []chip{
 		{"0m", "On time", 0}, {"10m", "10 min", 10}, {"30m", "30 min", 30}, {"1h", "1 hour", 60},
 		{"1d", "1 day", 1440}, {"7d", "1 week", 10080},
-	}
-	allDayChips = []chip{
-		{"0d", "On the day", 0}, {"1d", "1 day", 1440}, {"2d", "2 days", 2880}, {"7d", "1 week", 10080},
-		{"30d", "30 days", 43200},
 	}
 	repeatOptions = []option{
 		{events.Once, "Never"}, {events.Daily, "Daily"}, {events.Weekly, "Weekly"},
@@ -105,9 +101,12 @@ func (s *server) dashboard(w http.ResponseWriter, r *http.Request) {
 	render(w, r, http.StatusOK, Page(p))
 }
 
+// newFormData is an empty form, like calendar apps start one: today's date and "On time".
+// Editing (fillForm) replaces these with the event's values.
 func (s *server) newFormData(user string) formData {
 	return formData{
 		Mode: "new", AutoRemove: true, Priority: "default",
+		Date: clock.Now().In(s.cfg.TZ).Format("2006-01-02"), Selected: []string{"0m"},
 		DefaultNotifyTime: s.cfg.DefaultNotifyTime.String(),
 		DefaultTopic:      notify.DefaultTopic(user),
 	}
@@ -123,13 +122,9 @@ func fillForm(fd *formData, e events.Event) {
 		fd.Every = strconv.Itoa(e.Every)
 	}
 	fd.Selected = nil
-	chips := allDayChips
-	if e.HasTime() {
-		chips = timedChips
-	}
 	var custom []string
 	for _, rem := range e.Reminders {
-		if slices.ContainsFunc(chips, func(c chip) bool { return c.Value == rem }) {
+		if slices.ContainsFunc(reminderChips, func(c chip) bool { return c.Value == rem }) {
 			fd.Selected = append(fd.Selected, rem)
 		} else {
 			custom = append(custom, rem)

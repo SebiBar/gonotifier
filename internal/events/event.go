@@ -29,7 +29,7 @@ type Event struct {
 	Until      string   `json:"until,omitempty"`       // last day (YYYY-MM-DD) a repeat may fall on
 	Reminders  []string `json:"reminders"`             // before the event; see FireTime
 	AutoRemove *bool    `json:"auto_remove,omitempty"` // nil → true
-	NotifyTime string   `json:"notify_time,omitempty"` // all-day events: when their reminders are sent
+	NotifyTime string   `json:"notify_time,omitempty"` // all-day events: when their day starts for reminders
 	Topic      string   `json:"topic,omitempty"`
 	Priority   string   `json:"priority,omitempty"`
 	Tags       string   `json:"tags,omitempty"`
@@ -134,49 +134,50 @@ func HumanOffset(dur time.Duration, unit string) string {
 	return fmt.Sprintf("%d %ss", n, word)
 }
 
-// ReminderLabel describes a reminder the way the form does: "On time", "On the day",
-// "3 days before", "30 minutes before". Invalid offsets are returned as they are.
+// ReminderLabel describes a reminder the way the form does: "On time", "3 days before",
+// "30 minutes before". Invalid offsets are returned as they are.
 func ReminderLabel(offset string) string {
 	dur, unit, err := ParseOffset(offset)
 	switch {
 	case err != nil:
 		return offset
-	case dur == 0 && unit == "d":
-		return "On the day"
 	case dur == 0:
 		return "On time"
 	}
 	return HumanOffset(dur, unit) + " before"
 }
 
-// FireTime calculates when a reminder for the occurrence at occ fires, the way calendar apps do:
-//
-//	event at a time:  exactly that long before it (1d = 24 hours before; 0m = at the event's time)
-//	all-day event:    N days before, at the notify time (0d = on the day)
-//
-// All-day events only take day offsets (see Validate). The notify time is the event's
-// notify_time, else def.
+// ReminderStart returns when an occurrence's reminders count back from: the event's time, or for
+// an all-day event the notify time on its date (the event's notify_time, else def).
+func (e Event) ReminderStart(occ time.Time, def TimeOnly) time.Time {
+	if e.HasTime() {
+		return occ
+	}
+	nt := def
+	if t, err := ParseTimeOnly(e.NotifyTime); err == nil {
+		nt = t
+	}
+	y, m, d := occ.Date()
+	return time.Date(y, m, d, nt.Hour, nt.Minute, 0, 0, occ.Location())
+}
+
+// FireTime calculates when a reminder for the occurrence at occ fires: the offset before
+// ReminderStart. Days are calendar days ("1d" keeps the clock time across DST changes),
+// hours and minutes are exact. "0m" fires at the start itself.
 func FireTime(e Event, offset string, occ time.Time, def TimeOnly) (time.Time, error) {
-	dur, _, err := ParseOffset(offset)
+	dur, unit, err := ParseOffset(offset)
 	if err != nil {
 		return time.Time{}, err
 	}
-	if e.HasTime() {
-		return occ.Add(-dur), nil
+	start := e.ReminderStart(occ, def)
+	if unit == "d" {
+		return start.AddDate(0, 0, -int(dur/(24*time.Hour))), nil
 	}
-	y, m, d := occ.Date()
-	days := int(dur / (24 * time.Hour))
-	nt := def
-	if e.NotifyTime != "" {
-		if t, err := ParseTimeOnly(e.NotifyTime); err == nil {
-			nt = t
-		}
-	}
-	return time.Date(y, m, d-days, nt.Hour, nt.Minute, 0, 0, occ.Location()), nil
+	return start.Add(-dur), nil
 }
 
 // MaxLead returns an upper bound on how long before an occurrence any of the
-// event's reminders can fire.
+// event's reminders can fire (with an hour to spare for DST changes).
 func (e Event) MaxLead() time.Duration {
 	var max time.Duration
 	for _, off := range e.Reminders {
@@ -188,5 +189,5 @@ func (e Event) MaxLead() time.Duration {
 			max = dur
 		}
 	}
-	return max
+	return max + time.Hour
 }

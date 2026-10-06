@@ -200,7 +200,7 @@ func TestMigrationsAreRecordedAndIdempotent(t *testing.T) {
 	}
 	defer db.Close()
 	var v int
-	if err := db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil || v != 2 {
+	if err := db.QueryRow(`PRAGMA user_version`).Scan(&v); err != nil || v != 1 {
 		t.Errorf("user_version = %d, %v", v, err)
 	}
 }
@@ -267,31 +267,6 @@ func TestUsers(t *testing.T) {
 	st.CreateUser("bob", "tk_b")
 	if names, _ := st.Usernames(); len(names) != 2 || names[0] != "alice" || names[1] != "bob" {
 		t.Errorf("Usernames = %v", names)
-	}
-}
-
-func TestFirstUserTakesOverEventsFromBeforeUsers(t *testing.T) {
-	st, _ := open(t)
-	// Events and history from gonotifier 0.1 have no owner.
-	if _, err := st.Import("", []events.Event{dentist}, false); err != nil {
-		t.Fatal(err)
-	}
-	st.RecordSent(store.Record{ID: "k1", EventID: "x", EventName: "Old", Offset: "1d", TargetDate: "2026-01-01", FireTime: testutil.FixedNow})
-	v := st.Version()
-
-	st.CreateUser("alice", "tk_a")
-	if list, _ := st.ListEvents("alice"); len(list) != 1 {
-		t.Errorf("first user owns %d events, want 1", len(list))
-	}
-	if hist, _ := st.RecentHistory("alice", 10); len(hist) != 1 {
-		t.Errorf("first user has %d history records, want 1", len(hist))
-	}
-	if st.Version() == v {
-		t.Error("taking over events must bump the version (export files)")
-	}
-	st.CreateUser("bob", "tk_b")
-	if list, _ := st.ListEvents("bob"); len(list) != 0 {
-		t.Errorf("second user got %d events", len(list))
 	}
 }
 

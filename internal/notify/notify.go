@@ -125,33 +125,32 @@ func (n Ntfy) Send(topic, title, message, priority, tags string) error {
 
 var reBirthdayOwner = regexp.MustCompile(`(?i)^(.+?)['’]s? birthday$`)
 
-// Format generates (title, message, tags) for a reminder.
+// Format generates (title, message, tags) for a reminder of the occurrence at occ, sent at fire.
 //
 //	Yearly in 5d     → ("Birthday Reminder", "Mom's birthday is in 5 days (March 15)", "birthday,cake")
 //	Yearly tmrw      → ("Birthday Reminder", "Mom's birthday is tomorrow!", "birthday,cake")
 //	Yearly today     → ("Happy Birthday!", "Happy birthday Mom!", "birthday,tada")
 //	Timed in 12h     → ("Reminder", "Dentist in 12 hours (Nov 15 at 10:00)", "calendar")
-//	Timed, at time   → ("Reminder", "Take medicine at 08:00", "alarm_clock")
-//	Date-only today  → ("Reminder", "Renew car insurance is today!", "bell")
+//	Timed, on time   → ("Reminder", "Take medicine at 08:00", "alarm_clock")
+//	All-day today    → ("Reminder", "Renew car insurance is today!", "bell")
 //
-// Yearly events whose name doesn't mention "birthday" get generic annual wording; other
-// repeats are worded like one-time events. eventDatetime is the occurrence being reminded of.
-func Format(event events.Event, offset string, eventDatetime time.Time) (title, message, tags string) {
+// All-day events and yearly ones are worded by calendar day (a reminder an hour before an
+// all-day event starts at midnight says "tomorrow"). Yearly events whose name doesn't mention
+// "birthday" get generic annual wording; other repeats are worded like one-time events.
+func Format(event events.Event, offset string, occ, fire time.Time) (title, message, tags string) {
 	dur, unit, err := events.ParseOffset(offset)
 	if err != nil {
 		return "Reminder", event.Name, "bell"
 	}
-	days := int(dur / (24 * time.Hour))
-	isToday := unit == "d" && days == 0
-	isTomorrow := unit == "d" && days == 1
-	when := events.HumanOffset(dur, unit)
+	days := calendarDays(fire, occ)
+	inDays := events.HumanOffset(time.Duration(days)*24*time.Hour, "d")
+	date, clock := occ.Format("Jan 2"), occ.Format("15:04")
 
 	switch {
 	case event.HasTime() && dur == 0:
-		return "Reminder", fmt.Sprintf("%s at %s", event.Name, eventDatetime.Format("15:04")), "alarm_clock"
+		return "Reminder", fmt.Sprintf("%s at %s", event.Name, clock), "alarm_clock"
 
 	case event.Repeat == events.Yearly:
-		dateStr := eventDatetime.Format("January 2")
 		birthday := strings.Contains(strings.ToLower(event.Name), "birthday")
 		if birthday {
 			title, tags = "Birthday Reminder", "birthday,cake"
@@ -159,41 +158,38 @@ func Format(event events.Event, offset string, eventDatetime time.Time) (title, 
 			title, tags = "Annual Reminder", "repeat"
 		}
 		switch {
-		case isToday && birthday:
+		case days == 0 && birthday:
 			who := event.Name
 			if m := reBirthdayOwner.FindStringSubmatch(event.Name); m != nil {
 				who = m[1]
 			}
 			return "Happy Birthday!", fmt.Sprintf("Happy birthday %s!", who), "birthday,tada"
-		case isToday:
+		case days == 0:
 			return "Annual Reminder", fmt.Sprintf("%s is today!", event.Name), "tada"
-		case isTomorrow:
+		case days == 1:
 			message = fmt.Sprintf("%s is tomorrow!", event.Name)
 		default:
-			message = fmt.Sprintf("%s is in %s (%s)", event.Name, when, dateStr)
+			message = fmt.Sprintf("%s is in %s (%s)", event.Name, inDays, occ.Format("January 2"))
 		}
 		return title, message, tags
 
 	case event.HasTime():
-		clock := eventDatetime.Format("15:04")
 		switch {
-		case isToday:
-			message = fmt.Sprintf("%s is today at %s", event.Name, clock)
-		case isTomorrow:
+		case unit == "d" && days == 1:
 			message = fmt.Sprintf("%s is tomorrow at %s", event.Name, clock)
 		default:
-			message = fmt.Sprintf("%s in %s (%s at %s)", event.Name, when, eventDatetime.Format("Jan 2"), clock)
+			message = fmt.Sprintf("%s in %s (%s at %s)", event.Name, events.HumanOffset(dur, unit), date, clock)
 		}
 		return "Reminder", message, "calendar"
 
 	default:
-		switch {
-		case isToday:
+		switch days {
+		case 0:
 			message = fmt.Sprintf("%s is today!", event.Name)
-		case isTomorrow:
-			message = fmt.Sprintf("%s is tomorrow (%s)", event.Name, eventDatetime.Format("Jan 2"))
+		case 1:
+			message = fmt.Sprintf("%s is tomorrow (%s)", event.Name, date)
 		default:
-			message = fmt.Sprintf("%s is in %s (%s)", event.Name, when, eventDatetime.Format("Jan 2"))
+			message = fmt.Sprintf("%s is in %s (%s)", event.Name, inDays, date)
 		}
 		return "Reminder", message, "bell"
 	}

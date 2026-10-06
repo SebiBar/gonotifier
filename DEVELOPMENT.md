@@ -27,7 +27,7 @@ calling ntfy's `GET /v1/account`; gonotifier stores no passwords. On a user's fi
 an ntfy token for them (`POST /v1/account/token`, never expires) and keeps it in the `users` table,
 along with their calendar feed token. The web UI then uses a session cookie (30 days, renewed while
 in use, re-checked with ntfy once a day). Events and sent reminders have an `owner`, and every store
-query is scoped by it; the very first user takes over rows from 0.1, which have no owner.
+query is scoped by it.
 
 Events live in a SQLite database. The scheduler works out when the next reminder is due and sleeps
 until exactly then; adding, editing or deleting an event wakes it to re-plan immediately. It also

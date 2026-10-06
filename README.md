@@ -47,7 +47,7 @@ All settings are environment variables. Only `NTFY_URL` is required.
 |---|---|---|
 | `NTFY_URL` | **required** | ntfy server URL, e.g. `http://ntfy:80`. Logins are checked there too |
 | `TZ` | `UTC` | Your timezone, e.g. `America/New_York` |
-| `DEFAULT_NOTIFY_TIME` | `00:00` | When reminders of all-day events fire |
+| `DEFAULT_NOTIFY_TIME` | `00:00` | When all-day events start, for their reminders |
 | `CATCHUP_WINDOW` | `24h` | How late a missed reminder may still be sent |
 | `DB_PATH` | `/data/gonotifier.db` | SQLite database (events and sent reminders) |
 | `FEED_URL` | — | Public address the calendar feed is reachable on, e.g. `https://cal.example.com`, if it differs from the one you open the UI on. The UI then shows feed links there |
@@ -65,17 +65,16 @@ All settings are environment variables. Only `NTFY_URL` is required.
 | `repeat` | | `daily`, `weekly`, `monthly` or `yearly`; omit for a one-time event |
 | `every` | | Repeat interval: `every: 3` with `monthly` means every 3 months |
 | `until` | | Last date (`YYYY-MM-DD`) a repeat may fall on |
-| `notify_time` | | All-day events: when their reminders fire, e.g. `08:00` |
+| `notify_time` | | All-day events: when the day starts for its reminders, e.g. `08:00` (default `DEFAULT_NOTIFY_TIME`) |
 | `topic` | | ntfy topic for this event (default `<username>_reminders`). Shared topics work too, e.g. `family_reminders` |
 | `priority` | | Notification priority in ntfy: `min`, `low`, `default`, `high` or `urgent` |
 | `tags` | | ntfy tags, comma-separated (replaces the automatic ones) |
 | `auto_remove` | | `false` keeps the event after it has finished (default `true`) |
 
-**Reminders** work like in calendar apps:
-- **Events at a time:** `Nd`, `Nh` and `Nm` fire exactly that long before (`1d` = 24 hours before).
-  `0m` fires at the event's time, for simple reminders like taking medicine.
-- **All-day events:** `Nd` fires N days before, at the notify time (`0d` = on the day). The notify
-  time is `DEFAULT_NOTIFY_TIME` (midnight unless you change it), or the event's `notify_time`.
+**Reminders** count back from the event's start: its time, or for an all-day event the start of its
+day (`notify_time`, midnight by default). `30m` and `2h` are exact; `1d` and `7d` are calendar days, so
+they keep the clock time (a 10:00 event's `1d` reminder fires at 10:00 the day before). `0m` fires
+on time, for simple reminders like taking medicine.
 
 An event can have up to 10 reminders. On a repeating event, each must be shorter than the repeat
 interval. When you create an event or change its date or reminders, nothing may already be in the past:
@@ -145,7 +144,6 @@ command above. Mount a **directory** at `/data`, not a single file.
 - **Logins** are checked by ntfy; gonotifier stores no passwords. A username is locked for 15 minutes
   after 5 wrong passwords. Sessions last 30 days and are renewed while in use; once a day they check
   with ntfy that the user still exists.
-- **The first user to log in** takes over events created before gonotifier had users (version 0.1).
 - **Anyone with an ntfy account** on the server can log in. Each user only sees and changes their own
   events, and their reminders are sent with their own ntfy token, so ntfy's access rules decide which
   topics they can post to.
