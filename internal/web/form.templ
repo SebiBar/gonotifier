@@ -84,7 +84,7 @@ templ Form(fd formData) {
 			// Two sets of choices, shown by whether the event has a time. Hidden choices are
 			// disabled so they aren't submitted.
 			<div class="field">
-				<span class="field-label">Remind me</span>
+				<span class="field-label">Reminders</span>
 				<div class="chip-group" x-show="time">
 					for _, c := range timedChips {
 						<label class="chip-toggle" x-show={ fits(c.Minutes) }>
@@ -99,8 +99,7 @@ templ Form(fd formData) {
 						</label>
 					}
 				</div>
-				<input type="text" name="custom_reminders" value={ fd.CustomReminders } aria-label="Other reminders" autocomplete="off" :placeholder="time ? 'Other, e.g. 2h, 45m, 3d' : 'Other, e.g. 10d'"/>
-				<p class="hint" x-show="!time" x-text="'All-day reminders are sent at ' + (notifyTime || defaultNotify) + '.'"></p>
+				<input type="text" name="custom_reminders" value={ fd.CustomReminders } placeholder="Other, e.g. 10d" aria-label="Other reminders" autocomplete="off"/>
 			</div>
 			<button type="button" class="disclosure" :class="more && 'open'" @click="more = !more" :aria-expanded="more">
 				<span>More options</span>
@@ -119,7 +118,7 @@ templ Form(fd formData) {
 					<span>Remove automatically once it has finished</span>
 				</label>
 				<div class="field">
-					<span class="field-label">Priority</span>
+					<span class="field-label">Notification priority</span>
 					<div class="segmented">
 						for _, o := range priorityOptions {
 							<label><input type="radio" name="priority" value={ o.Value } checked?={ fd.Priority == o.Value }/>{ o.Label }</label>
@@ -128,7 +127,7 @@ templ Form(fd formData) {
 				</div>
 				<label class="field" x-show="!time">
 					<span class="field-label">All-day reminders arrive at</span>
-					<input type="time" name="notify_time" value={ fd.Event.NotifyTime } x-model="notifyTime" :disabled="time"/>
+					<input type="time" name="notify_time" value={ fd.Event.NotifyTime } :disabled="time"/>
 					<span class="hint">Leave empty for the default ({ fd.DefaultNotifyTime }).</span>
 				</label>
 				<div class="row2">

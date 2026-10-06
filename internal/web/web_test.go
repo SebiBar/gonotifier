@@ -123,7 +123,8 @@ func TestEventForms(t *testing.T) {
 	id := env.ID(t, "Dentist")
 	body := do(mux, "GET", "/events/"+id+"/edit", "", nil).Body.String()
 	for _, want := range []string{`hx-put="/events/` + id + `"`, `name="date" value="2026-10-05"`, `name="time" value="10:00"`,
-		`value="high" checked`, `value="12h" checked`} {
+		`value="high" checked`, `value="1d" checked`,
+		`name="custom_reminders" value="12h"`} { // not one of the choices: shown under "Other"
 		if !strings.Contains(body, want) {
 			t.Errorf("edit form missing %q", want)
 		}
@@ -377,7 +378,7 @@ func TestNoEmojiInUI(t *testing.T) {
 func TestForm_RemindersFollowTheEventType(t *testing.T) {
 	env, mux, _ := newTestMux(t, "")
 	body := do(mux, "GET", "/events/new", "", nil).Body.String()
-	for _, want := range []string{`value="0m"`, ">At time", `value="0d"`, ">On the day", `x-show="time"`, `x-show="!time"`} {
+	for _, want := range []string{`value="0m"`, ">On time", `value="0d"`, ">On the day", `x-show="time"`, `x-show="!time"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("new form missing %q", want)
 		}
@@ -387,7 +388,7 @@ func TestForm_RemindersFollowTheEventType(t *testing.T) {
 		t.Error("reminder choices aren't hidden by the repeat interval")
 	}
 
-	// "At time" on a daily event: for simple reminders like taking medicine.
+	// "On time" on a daily event: for simple reminders like taking medicine.
 	form := url.Values{"name": {"Take medicine"}, "date": {"2026-10-02"}, "time": {"20:00"}, "repeat": {"daily"}, "reminders": {"0m"}}
 	if rr := do(mux, "POST", "/events", form.Encode(), formHeaders); rr.Header().Get("HX-Retarget") != "" {
 		t.Fatalf("at-time reminder rejected: %s", rr.Body.String())
@@ -395,7 +396,7 @@ func TestForm_RemindersFollowTheEventType(t *testing.T) {
 	if e := get(t, env, "Take medicine"); strings.Join(e.Reminders, ",") != "0m" {
 		t.Errorf("reminders = %v", e.Reminders)
 	}
-	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `<span class="chip">at time</span>`) {
+	if body := do(mux, "GET", "/", "", nil).Body.String(); !strings.Contains(body, `<span class="chip">on time</span>`) {
 		t.Error("event list doesn't show the at-time reminder")
 	}
 

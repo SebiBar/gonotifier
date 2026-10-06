@@ -347,7 +347,8 @@ dialog.modal[open] > article { animation: modal-in .2s cubic-bezier(.2, .8, .2, 
   .ev-next { display: none; }
   .ev-meta .mobile { display: inline; }
   .icon-btn { width: 2.5rem; height: 2.5rem; }
-  .chip-toggle { padding: .45rem .8rem; }
+  .chip-toggle { padding: .45rem .5rem; }
+  .chip-group { gap: .25rem; }
   dialog.modal { padding: 0; align-items: flex-end; }
   dialog.modal > article { max-width: none; max-height: 92vh; border-radius: 16px 16px 0 0; border-bottom: 0; }
   dialog.modal-sm > article { max-width: none; }

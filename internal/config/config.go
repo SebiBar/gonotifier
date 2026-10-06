@@ -56,7 +56,7 @@ func Load() (*Config, error) {
 	if cfg.CatchupWindow, err = time.ParseDuration(envOr("CATCHUP_WINDOW", "24h")); err != nil || cfg.CatchupWindow < 0 {
 		errs = append(errs, fmt.Errorf("CATCHUP_WINDOW: invalid duration"))
 	}
-	if cfg.DefaultNotifyTime, err = events.ParseTimeOnly(envOr("DEFAULT_NOTIFY_TIME", "09:00")); err != nil {
+	if cfg.DefaultNotifyTime, err = events.ParseTimeOnly(envOr("DEFAULT_NOTIFY_TIME", "00:00")); err != nil {
 		errs = append(errs, fmt.Errorf("DEFAULT_NOTIFY_TIME: %w", err))
 	}
 	if cfg.Port, err = strconv.Atoi(envOr("PORT", "8080")); err != nil || cfg.Port <= 0 || cfg.Port > 65535 {

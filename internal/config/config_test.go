@@ -12,7 +12,7 @@ func TestLoad_Defaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if cfg.NtfyURL != "http://ntfy:80" || cfg.DBPath != "/data/gonotifier.db" || cfg.Port != 8080 ||
-		cfg.TZ.String() != "UTC" || cfg.DefaultNotifyTime.String() != "09:00" || cfg.ExportDir != "/data/exports" {
+		cfg.TZ.String() != "UTC" || cfg.DefaultNotifyTime.String() != "00:00" || cfg.ExportDir != "/data/exports" {
 		t.Errorf("unexpected defaults: %+v", cfg)
 	}
 }

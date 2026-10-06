@@ -212,7 +212,7 @@ func Form(fd formData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div></div><div class=\"row2 field\" x-show=\"repeat !== ''\" x-cloak x-transition:enter=\"fade-enter\" x-transition:enter-start=\"fade-from\" x-transition:enter-end=\"fade-to\"><label class=\"field\"><span class=\"field-label\">Every</span><div class=\"input-suffix\"><input type=\"number\" name=\"every\" min=\"1\" max=\"1000\" placeholder=\"1\" x-model=\"every\"> <span x-text=\"{daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year'}[repeat] + ((+every || 1) > 1 ? 's' : '')\"></span></div></label> <label class=\"field\"><span class=\"field-label\">Until <span class=\"muted\">(optional)</span></span> <input type=\"date\" name=\"until\" x-model=\"until\"></label></div><div class=\"field\"><span class=\"field-label\">Remind me</span><div class=\"chip-group\" x-show=\"time\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "</div></div><div class=\"row2 field\" x-show=\"repeat !== ''\" x-cloak x-transition:enter=\"fade-enter\" x-transition:enter-start=\"fade-from\" x-transition:enter-end=\"fade-to\"><label class=\"field\"><span class=\"field-label\">Every</span><div class=\"input-suffix\"><input type=\"number\" name=\"every\" min=\"1\" max=\"1000\" placeholder=\"1\" x-model=\"every\"> <span x-text=\"{daily: 'day', weekly: 'week', monthly: 'month', yearly: 'year'}[repeat] + ((+every || 1) > 1 ? 's' : '')\"></span></div></label> <label class=\"field\"><span class=\"field-label\">Until <span class=\"muted\">(optional)</span></span> <input type=\"date\" name=\"until\" x-model=\"until\"></label></div><div class=\"field\"><span class=\"field-label\">Reminders</span><div class=\"chip-group\" x-show=\"time\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -369,7 +369,7 @@ func Form(fd formData) templ.Component {
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" aria-label=\"Other reminders\" autocomplete=\"off\" :placeholder=\"time ? 'Other, e.g. 2h, 45m, 3d' : 'Other, e.g. 10d'\"><p class=\"hint\" x-show=\"!time\" x-text=\"'All-day reminders are sent at ' + (notifyTime || defaultNotify) + '.'\"></p></div><button type=\"button\" class=\"disclosure\" :class=\"more && 'open'\" @click=\"more = !more\" :aria-expanded=\"more\"><span>More options</span>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "\" placeholder=\"Other, e.g. 10d\" aria-label=\"Other reminders\" autocomplete=\"off\"></div><button type=\"button\" class=\"disclosure\" :class=\"more && 'open'\" @click=\"more = !more\" :aria-expanded=\"more\"><span>More options</span>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -387,7 +387,7 @@ func Form(fd formData) templ.Component {
 				return templ_7745c5c3_Err
 			}
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "> <span>Remove automatically once it has finished</span></label><div class=\"field\"><span class=\"field-label\">Priority</span><div class=\"segmented\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "> <span>Remove automatically once it has finished</span></label><div class=\"field\"><span class=\"field-label\">Notification priority</span><div class=\"segmented\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -399,7 +399,7 @@ func Form(fd formData) templ.Component {
 			var templ_7745c5c3_Var19 string
 			templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.ResolveAttributeValue(o.Value)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 125, Col: 65}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 124, Col: 65}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var19)
 			if templ_7745c5c3_Err != nil {
@@ -422,7 +422,7 @@ func Form(fd formData) templ.Component {
 			var templ_7745c5c3_Var20 string
 			templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(o.Label)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 125, Col: 114}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 124, Col: 114}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 			if templ_7745c5c3_Err != nil {
@@ -440,20 +440,20 @@ func Form(fd formData) templ.Component {
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.ResolveAttributeValue(fd.Event.NotifyTime)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 131, Col: 70}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 130, Col: 70}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var21)
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\" x-model=\"notifyTime\" :disabled=\"time\"> <span class=\"hint\">Leave empty for the default (")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 50, "\" :disabled=\"time\"> <span class=\"hint\">Leave empty for the default (")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(fd.DefaultNotifyTime)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 132, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 131, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -466,7 +466,7 @@ func Form(fd formData) templ.Component {
 		var templ_7745c5c3_Var23 string
 		templ_7745c5c3_Var23, templ_7745c5c3_Err = templ.ResolveAttributeValue(fd.Event.Topic)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 137, Col: 60}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 136, Col: 60}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var23)
 		if templ_7745c5c3_Err != nil {
@@ -479,7 +479,7 @@ func Form(fd formData) templ.Component {
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.ResolveAttributeValue(fd.DefaultTopic)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 137, Col: 92}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 136, Col: 92}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var24)
 		if templ_7745c5c3_Err != nil {
@@ -492,7 +492,7 @@ func Form(fd formData) templ.Component {
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.ResolveAttributeValue(fd.Event.Tags)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 141, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/web/form.templ`, Line: 140, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ_7745c5c3_Var25)
 		if templ_7745c5c3_Err != nil {

@@ -349,7 +349,7 @@ func TestValidate_Messages(t *testing.T) {
 
 func TestReminderLabel(t *testing.T) {
 	for off, want := range map[string]string{
-		"0m": "At time", "0d": "On the day", "30m": "30 minutes before", "1h": "1 hour before",
+		"0m": "On time", "0d": "On the day", "30m": "30 minutes before", "1h": "1 hour before",
 		"1d": "1 day before", "3d": "3 days before", "7d": "1 week before", "14d": "2 weeks before",
 		"30d": "30 days before", "bogus": "bogus",
 	} {

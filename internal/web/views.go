@@ -103,7 +103,7 @@ func reminderLabels(e events.Event) []string {
 	for _, r := range e.Reminders {
 		switch {
 		case r == "0m":
-			r = "at time"
+			r = "on time"
 		case r == "0d":
 			r = "on the day"
 		}

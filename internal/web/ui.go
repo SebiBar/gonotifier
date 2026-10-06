@@ -28,15 +28,15 @@ var (
 	// Like calendar apps: events at a time get exact durations, all-day events get days
 	// (sent at the notify time).
 	timedChips = []chip{
-		{"0m", "At time", 0}, {"10m", "10 min", 10}, {"30m", "30 min", 30}, {"1h", "1 hour", 60},
-		{"12h", "12 hours", 720}, {"1d", "1 day", 1440}, {"2d", "2 days", 2880}, {"7d", "1 week", 10080},
+		{"0m", "On time", 0}, {"10m", "10 min", 10}, {"30m", "30 min", 30}, {"1h", "1 hour", 60},
+		{"1d", "1 day", 1440}, {"7d", "1 week", 10080},
 	}
 	allDayChips = []chip{
-		{"0d", "On the day", 0}, {"1d", "1 day", 1440}, {"2d", "2 days", 2880}, {"3d", "3 days", 4320},
-		{"7d", "1 week", 10080}, {"14d", "2 weeks", 20160}, {"30d", "30 days", 43200},
+		{"0d", "On the day", 0}, {"1d", "1 day", 1440}, {"2d", "2 days", 2880}, {"7d", "1 week", 10080},
+		{"30d", "30 days", 43200},
 	}
 	repeatOptions = []option{
-		{events.Once, "Once"}, {events.Daily, "Daily"}, {events.Weekly, "Weekly"},
+		{events.Once, "Never"}, {events.Daily, "Daily"}, {events.Weekly, "Weekly"},
 		{events.Monthly, "Monthly"}, {events.Yearly, "Yearly"},
 	}
 	priorityOptions = []option{{"low", "Low"}, {"default", "Normal"}, {"high", "High"}, {"urgent", "Urgent"}}
@@ -67,7 +67,7 @@ func (fd formData) isSelected(offset string) bool { return slices.Contains(fd.Se
 func (fd formData) alpineState() string {
 	state, _ := templ.JSONString(map[string]any{
 		"repeat": fd.Repeat, "every": fd.Every, "until": fd.Until, "more": fd.ShowMore,
-		"time": fd.Time, "notifyTime": fd.Event.NotifyTime, "defaultNotify": fd.DefaultNotifyTime,
+		"time": fd.Time,
 	})
 	return state // strings and a bool always encode
 }

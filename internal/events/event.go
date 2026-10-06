@@ -134,7 +134,7 @@ func HumanOffset(dur time.Duration, unit string) string {
 	return fmt.Sprintf("%d %ss", n, word)
 }
 
-// ReminderLabel describes a reminder the way the form does: "At time", "On the day",
+// ReminderLabel describes a reminder the way the form does: "On time", "On the day",
 // "3 days before", "30 minutes before". Invalid offsets are returned as they are.
 func ReminderLabel(offset string) string {
 	dur, unit, err := ParseOffset(offset)
@@ -144,7 +144,7 @@ func ReminderLabel(offset string) string {
 	case dur == 0 && unit == "d":
 		return "On the day"
 	case dur == 0:
-		return "At time"
+		return "On time"
 	}
 	return HumanOffset(dur, unit) + " before"
 }

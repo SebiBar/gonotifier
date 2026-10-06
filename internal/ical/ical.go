@@ -23,7 +23,7 @@ import (
 //	  For repeats: RRULE:FREQ=DAILY|WEEKLY|MONTHLY|YEARLY[;INTERVAL=n][;UNTIL=…]
 //	  For each reminder: VALARM with UID and TRIGGER relative to the start, matching
 //	  events.FireTime: -PT30M (30 minutes before), PT0S (at the time), and for all-day
-//	  events the notify time: -PT15H (the day before at 09:00), PT9H (on the day at 09:00)
+//	  events the notify time, e.g. with 09:00: -PT15H (the day before), PT9H (on the day)
 //	  END:VEVENT
 //	END:VCALENDAR
 //

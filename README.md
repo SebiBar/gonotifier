@@ -47,7 +47,7 @@ All settings are environment variables. Only `NTFY_URL` is required.
 |---|---|---|
 | `NTFY_URL` | **required** | ntfy server URL, e.g. `http://ntfy:80`. Logins are checked there too |
 | `TZ` | `UTC` | Your timezone, e.g. `America/New_York` |
-| `DEFAULT_NOTIFY_TIME` | `09:00` | When reminders of all-day events fire |
+| `DEFAULT_NOTIFY_TIME` | `00:00` | When reminders of all-day events fire |
 | `CATCHUP_WINDOW` | `24h` | How late a missed reminder may still be sent |
 | `DB_PATH` | `/data/gonotifier.db` | SQLite database (events and sent reminders) |
 | `FEED_URL` | — | Public address the calendar feed is reachable on, e.g. `https://cal.example.com`, if it differs from the one you open the UI on. The UI then shows feed links there |
@@ -67,14 +67,15 @@ All settings are environment variables. Only `NTFY_URL` is required.
 | `until` | | Last date (`YYYY-MM-DD`) a repeat may fall on |
 | `notify_time` | | All-day events: when their reminders fire, e.g. `08:00` |
 | `topic` | | ntfy topic for this event (default `<username>_reminders`). Shared topics work too, e.g. `family_reminders` |
-| `priority` | | `min`, `low`, `default`, `high` or `urgent` |
+| `priority` | | Notification priority in ntfy: `min`, `low`, `default`, `high` or `urgent` |
 | `tags` | | ntfy tags, comma-separated (replaces the automatic ones) |
 | `auto_remove` | | `false` keeps the event after it has finished (default `true`) |
 
 **Reminders** work like in calendar apps:
 - **Events at a time:** `Nd`, `Nh` and `Nm` fire exactly that long before (`1d` = 24 hours before).
   `0m` fires at the event's time, for simple reminders like taking medicine.
-- **All-day events:** `Nd` fires N days before, at the notify time (`0d` = on the day).
+- **All-day events:** `Nd` fires N days before, at the notify time (`0d` = on the day). The notify
+  time is `DEFAULT_NOTIFY_TIME` (midnight unless you change it), or the event's `notify_time`.
 
 An event can have up to 10 reminders. On a repeating event, each must be shorter than the repeat
 interval. When you create an event or change its date or reminders, nothing may already be in the past:
