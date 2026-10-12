@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -18,7 +19,8 @@ import (
 const dbTimeFormat = "2006-01-02T15:04:05Z"
 
 // migrations run in order; PRAGMA user_version records how many have been applied.
-// Append new ones — never edit or reorder existing entries.
+// Append new ones — never edit or reorder existing entries: a database that already ran a
+// migration never runs it again. TestMigrationsAreAppendOnly enforces this.
 var migrations = []string{
 	// 1: users (logins come from ntfy), their sessions and events, and the log of sent reminders
 	`CREATE TABLE users (
@@ -90,7 +92,62 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, err
 	}
+	if err := checkSchema(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return s, nil
+}
+
+// checkSchema compares the database's tables with what this version's migrations create. A
+// database made or changed by another version (e.g. after rolling back) then fails at startup
+// with a clear error, instead of starting and failing on every query.
+func checkSchema(db *sql.DB) error {
+	fresh, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		return err
+	}
+	defer fresh.Close()
+	for i, m := range migrations {
+		if _, err := fresh.Exec(m); err != nil {
+			return fmt.Errorf("migration %d: %w", i+1, err)
+		}
+	}
+	want, err := tableColumns(fresh)
+	if err != nil {
+		return err
+	}
+	have, err := tableColumns(db)
+	if err != nil {
+		return err
+	}
+	for table, cols := range want {
+		if !slices.Equal(have[table], cols) {
+			return fmt.Errorf("the database doesn't match this version of gonotifier: table %s has columns %v, "+
+				"this version expects %v. Run the version that created it, or restore a backup made with this one",
+				table, have[table], cols)
+		}
+	}
+	return nil
+}
+
+// tableColumns lists each table's columns, in order.
+func tableColumns(db *sql.DB) (map[string][]string, error) {
+	rows, err := db.Query(`SELECT m.name, p.name FROM sqlite_master m JOIN pragma_table_info(m.name) p
+		WHERE m.type = 'table' AND m.name NOT LIKE 'sqlite_%' ORDER BY m.name, p.cid`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	tables := map[string][]string{}
+	for rows.Next() {
+		var table, col string
+		if err := rows.Scan(&table, &col); err != nil {
+			return nil, err
+		}
+		tables[table] = append(tables[table], col)
+	}
+	return tables, rows.Err()
 }
 
 func (s *Store) migrate() error {

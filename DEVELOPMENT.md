@@ -16,6 +16,9 @@ Notes for working on gonotifier. For using it, see the [README](README.md).
   has no build step beyond `go tool templ generate`.
 - **Packages:** date and reminder logic and validation live in `events` (no I/O); only `store` talks
   to SQLite.
+- **Database:** change the schema only by appending a migration in `store.go`, never by editing a
+  released one (databases that ran it won't run it again). `TestMigrationsAreAppendOnly` fails on
+  edits; add the new migration's hash there once it's final.
 - **Time:** use `clock.Now()` (never `time.Now()`) in app logic, so tests can freeze time, and always
   the configured `TZ`.
 - **UI:** server-rendered (templ + htmx, a little Alpine.js), no emojis, works on mobile and in light
