@@ -43,7 +43,7 @@ func TestCheck_SendsDue(t *testing.T) {
 	for _, n := range env.Ntfy.All() {
 		byTopic[n.Topic] = n
 	}
-	d := byTopic["alice_reminders"] // the owner's default topic
+	d := byTopic["alice"] // the owner's default topic
 	if d.Title != "Reminder" || d.Body != "Dentist is tomorrow at 09:00" || d.Priority != "high" ||
 		d.Tags != "calendar" || d.Auth != "Bearer "+testutil.UserToken {
 		t.Errorf("dentist notification: %+v", d)
@@ -325,7 +325,7 @@ func TestCheck_EachUserWithOwnTokenAndTopic(t *testing.T) {
 	for _, n := range env.Ntfy.All() {
 		got[n.Body] = n
 	}
-	if n := got["Dentist is tomorrow at 10:00"]; n.Topic != "alice_reminders" || n.Auth != "Bearer "+testutil.UserToken {
+	if n := got["Dentist is tomorrow at 10:00"]; n.Topic != "alice" || n.Auth != "Bearer "+testutil.UserToken {
 		t.Errorf("alice's reminder: %+v", n)
 	}
 	if n := got["Gym is tomorrow at 10:00"]; n.Topic != "family" || n.Auth != "Bearer "+testutil.OtherToken {

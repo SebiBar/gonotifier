@@ -82,13 +82,13 @@ func (n Ntfy) account(method, path, authorization string, body io.Reader, out an
 
 var reTopicUnsafe = regexp.MustCompile(`[^A-Za-z0-9_-]`)
 
-// DefaultTopic is where a user's reminders go when an event doesn't set a topic: <username>_reminders.
+// DefaultTopic is where a user's reminders go when an event doesn't set a topic: the username.
 func DefaultTopic(username string) string {
 	name := reTopicUnsafe.ReplaceAllString(username, "_") // ntfy usernames may contain . + @
-	if len(name) > 54 {
-		name = name[:54] // topics are at most 64 characters
+	if len(name) > 64 {
+		name = name[:64] // topics are at most 64 characters
 	}
-	return name + "_reminders"
+	return name
 }
 
 // Send POSTs a message to {URL}/{topic} with Title, Priority and Tags headers.

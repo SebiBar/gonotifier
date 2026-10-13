@@ -90,9 +90,9 @@ func TestFormatLate(t *testing.T) {
 
 func TestDefaultTopic(t *testing.T) {
 	for user, want := range map[string]string{
-		"sebi":                  "sebi_reminders",
-		"ana.m@home":            "ana_m_home_reminders",
-		strings.Repeat("a", 80): strings.Repeat("a", 54) + "_reminders",
+		"sebi":                  "sebi",
+		"ana.m@home":            "ana_m_home",
+		strings.Repeat("a", 80): strings.Repeat("a", 64),
 	} {
 		if got := DefaultTopic(user); got != want {
 			t.Errorf("DefaultTopic(%q) = %q, want %q", user, got, want)

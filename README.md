@@ -26,8 +26,8 @@ services:
 ```
 
 On your first login gonotifier creates an ntfy token for you (labelled `gonotifier`) and sends your
-reminders with it, by default to the topic `<username>_reminders`. So give each user write access
-to their own topics, e.g. `ntfy access alice 'alice_*' rw`.
+reminders with it, by default to the topic named after them (`<username>`). So give each user write
+access to their own topic, e.g. `ntfy access alice alice rw`.
 
 ## Configuration
 
@@ -56,7 +56,7 @@ Environment variables; only `NTFY_URL` is required.
 | `every` | | Repeat interval: `3` with `monthly` means every 3 months |
 | `until` | | Last date (`YYYY-MM-DD`) a repeat may fall on |
 | `day_start` | | All-day events: overrides `DAY_START`, e.g. `08:00` |
-| `topic` | | ntfy topic (default `<username>_reminders`); shared topics work too |
+| `topic` | | ntfy topic (default `<username>`); shared topics work too |
 | `priority` | | ntfy priority: `min`, `low`, `default`, `high` or `urgent` |
 | `tags` | | ntfy tags, comma-separated (replace the automatic ones) |
 | `auto_remove` | | `false` keeps the event once it has finished (default `true`) |
